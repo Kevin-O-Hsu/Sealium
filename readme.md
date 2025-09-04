@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assests/Sealium-logo-transparent.png" width="360" alt="Sealium Logo">
+  <img src="assests/Sealium-logo-transparent.png" width="440" alt="Sealium Logo">
 </p>
 
 <p align="center">
