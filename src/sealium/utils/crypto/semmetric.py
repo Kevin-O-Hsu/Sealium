@@ -86,10 +86,10 @@ class SymmetricEncryption:
             )
         except Exception as e:
             raise ValueError(f"Decryption failed: {e}") from e
-    
-    def generate_key(self, set_this:bool=False) -> str:
+
+    def generate_key(self, set_this: bool = False) -> str:
         """生成一个新的安全随机密钥(Base64 编码字符串)"""
-        key = Fernet.generate_key().decode("ascii") # this is b64 bytes
+        key = Fernet.generate_key().decode("ascii")  # this is b64 bytes
         if set_this:
             self.key_data = key
             self.cipher = Fernet(key)
