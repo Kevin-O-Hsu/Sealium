@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sealium"
+version = "0.0.1"
+description = "Sealium is a state-of-the-art Python library for secure licensing and activation management."
+readme = "README.md"
+license = { text = "GPL-3.0" }
+authors = [{ name = "Kevin Hsu" }]
+dependencies = ["nuitka", "cryptography"]
