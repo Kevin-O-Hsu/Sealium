@@ -17,6 +17,7 @@ class SymmetricEncryption:
     ) -> None:
         self.key_path: Path | None = None
         self.cipher: Fernet | None = None
+        self.key_data: str | None = None
 
         # -------------------------------
         # 处理 key_path：转换为 Path
@@ -52,9 +53,8 @@ class SymmetricEncryption:
         """私有方法：从文件加载对称密钥并初始化 Fernet"""
         assert self.key_path is not None
         try:
-            key_data = self.key_path.read_text().strip()
-            # Fernet 接受的是 32 字节 base64 编码的密钥
-            self.cipher = Fernet(key_data.encode("ascii"))
+            self.key_data = self.key_path.read_text().strip()
+            self.cipher = Fernet(self.key_data)
         except Exception as e:
             raise ValueError(
                 f"Failed to load or parse symmetric key from {self.key_path}: {e}"
@@ -86,15 +86,16 @@ class SymmetricEncryption:
             )
         except Exception as e:
             raise ValueError(f"Decryption failed: {e}") from e
-
-    @staticmethod
-    def generate_key() -> str:
+    
+    def generate_key(self, set_this:bool=False) -> str:
         """生成一个新的安全随机密钥(Base64 编码字符串)"""
-        return Fernet.generate_key().decode("ascii")
+        key = Fernet.generate_key().decode("ascii") # this is b64 bytes
+        if set_this:
+            self.key_data = key
+            self.cipher = Fernet(key)
+        return key
 
-    @staticmethod
-    def save_key(key: str, path: str | Path) -> None:
+    def save_key(self, path: str | Path) -> None:
         """将密钥保存到文件"""
-        p = Path(path)
-        p.write_text(key + "\n")
-        p.chmod(0o600)
+        key_path = Path(path)
+        key_path.write_text(self.key_data)

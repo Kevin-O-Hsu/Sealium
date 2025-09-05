@@ -108,7 +108,69 @@ class AsymmetricEncryption:
             ),
         )
         return decrypted_message.decode("utf-8")
+    
+    
+    def generate_keys(self, key_size: int = 2048, set_this:bool=False) -> tuple[rsa.RSAPrivateKey, rsa.RSAPublicKey]:
+        """
+        生成一个新的 RSA 密钥对。
+        
+        :param key_size: 密钥长度，默认为 2048 位
+        """
+        if key_size < 512:
+            raise ValueError("Key size must be at least 512 bits.")
+        
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=key_size,
+        )
+        public_key = private_key.public_key()
+        
+        if set_this:
+            self.private_key = private_key
+            self.public_key = public_key
+        
+        return private_key, public_key
 
+    def save_keys(self, public_key_path: str | Path, private_key_path: str | Path) -> None:
+        """
+        将当前已生成的公钥和私钥保存为 PEM 文件。
+
+        :param public_key_path: 公钥保存路径
+        :param private_key_path: 私钥保存路径
+        """
+        if self.public_key is None or self.private_key is None:
+            raise ValueError("Keys have not been generated yet. Call generate_keys() first.")
+
+
+        if isinstance(public_key_path, str):
+            public_path = Path(public_key_path)
+        else:
+            public_path = public_key_path
+
+        if isinstance(private_key_path, str):
+            private_path = Path(private_key_path)
+        else:
+            private_path = private_key_path
+
+        # 序列化并写入公钥
+        public_pem = self.public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        public_path.write_bytes(public_pem)
+
+        # 序列化并写入私钥
+        private_pem = self.private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+        private_path.write_bytes(private_pem)
+
+        # 更新实例变量
+        self.public_key_path = public_path
+        self.private_key_path = private_path
+    
     def _validate_path(self, path: Path, name: str) -> None:
         if not path.exists():
             raise FileNotFoundError(f"{name} not found: {path}")
