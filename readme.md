@@ -3,9 +3,9 @@
 </p>
 
 <p align="center">
-  <!-- <a href="https://pypi.org/project/sealium/">
+  <a href="https://pypi.org/project/sealium/">
     <img src="https://img.shields.io/pypi/v/sealium?style=for-the-badge&logo=python&color=blue" alt="PyPI Version">
-  </a> -->
+  </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-GPLv3-green?style=for-the-badge" alt="License">
   </a>
