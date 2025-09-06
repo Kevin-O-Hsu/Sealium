@@ -34,7 +34,7 @@ class AsymmetricEncryption:
         if public_key_path is not None:
             self._validate_path(public_key_path, "Public key file")
         # 校验私钥路径
-        if self.private_key_path is not None:
+        if private_key_path is not None:
             self._validate_path(private_key_path, "Private key file")
 
         # 所有校验通过，安全赋值
@@ -55,7 +55,20 @@ class AsymmetricEncryption:
         assert self.public_key_path is not None
         try:
             key_data = self.public_key_path.read_text().strip()
-            self.public_key = serialization.load_pem_public_key(key_data)
+            # 检查是否是有效的PEM格式
+            if not key_data.startswith("-----BEGIN"):
+                raise ValueError("Invalid PEM format: missing BEGIN header")
+            self.public_key = serialization.load_pem_public_key(key_data.encode("utf-8"))
+        except ValueError as e:
+            if "Unable to load PEM file" in str(e) or "MalformedFraming" in str(e):
+                raise ValueError(
+                    f"Failed to load public key from {self.public_key_path}: "
+                    f"Invalid or corrupted PEM file format"
+                ) from e
+            else:
+                raise ValueError(
+                    f"Failed to load public key from {self.public_key_path}: {e}"
+                ) from e
         except Exception as e:
             raise ValueError(
                 f"Failed to load public key from {self.public_key_path}: {e}"
@@ -66,7 +79,20 @@ class AsymmetricEncryption:
         assert self.private_key_path is not None
         try:
             key_data = self.private_key_path.read_text().strip()
-            self.private_key = serialization.load_pem_private_key(key_data)
+            # 检查是否是有效的PEM格式
+            if not key_data.startswith("-----BEGIN"):
+                raise ValueError("Invalid PEM format: missing BEGIN header")
+            self.private_key = serialization.load_pem_private_key(key_data.encode("utf-8"), None)
+        except ValueError as e:
+            if "Unable to load PEM file" in str(e) or "MalformedFraming" in str(e):
+                raise ValueError(
+                    f"Failed to load private key from {self.private_key_path}: "
+                    f"Invalid or corrupted PEM file format"
+                ) from e
+            else:
+                raise ValueError(
+                    f"Failed to load private key from {self.private_key_path}: {e}"
+                ) from e
         except Exception as e:
             raise ValueError(
                 f"Failed to load private key from {self.private_key_path}: {e}"
