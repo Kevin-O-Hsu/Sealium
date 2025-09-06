@@ -24,10 +24,8 @@ class SymmetricEncryption:
         # -------------------------------
         if key_path is None:
             pass  # 保持为 None
-        elif isinstance(key_path, str):
+        elif isinstance(key_path, str) or isinstance(key_path, Path):
             self.key_path = Path(key_path)
-        elif isinstance(key_path, Path):
-            self.key_path = key_path
         else:
             raise TypeError(
                 f"key_path must be str, Path, or None, got {type(key_path)}"
@@ -38,8 +36,6 @@ class SymmetricEncryption:
         # -------------------------------
         if self.key_path is not None:
             self._validate_path(self.key_path, "Symmetric key file")
-
-            # 加载并验证密钥格式
             self._load_key()
 
     def _validate_path(self, path: Path, name: str) -> None:

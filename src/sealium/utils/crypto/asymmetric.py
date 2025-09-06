@@ -14,10 +14,8 @@ class AsymmetricEncryption:
         # 转换为 Path 并验证（如果提供了路径）
         if public_key_path is None:
             pass  # 保持为 None
-        elif isinstance(public_key_path, str):
+        elif isinstance(public_key_path, str) or isinstance(public_key_path, Path):
             public_key_path = Path(public_key_path)
-        elif isinstance(public_key_path, Path):
-            public_key_path = public_key_path
         else:
             raise TypeError(
                 f"public_key_path must be str, Path, or None, got {type(public_key_path)}"
@@ -25,10 +23,8 @@ class AsymmetricEncryption:
 
         if private_key_path is None:
             pass  # 保持为 None
-        elif isinstance(private_key_path, str):
+        elif isinstance(private_key_path, str) or isinstance(private_key_path, Path):
             private_key_path = Path(private_key_path)
-        elif isinstance(private_key_path, Path):
-            private_key_path = private_key_path
         else:
             raise TypeError(
                 f"private_key_path must be str, Path, or None, got {type(private_key_path)}"
