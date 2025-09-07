@@ -5,19 +5,9 @@ import winreg
 from typing import Optional
 import ctypes
 from ctypes import wintypes
+from .hardwaredata_abc import HardWareDataABC
 
-
-class HardwareData:
-    def __init__(self):
-        """初始化硬件数据对象，自动获取所有硬件信息"""
-        self.system_volume_serial: Optional[str] = self.get_system_volume_serial()
-        self.system_volume_name: Optional[str] = self.get_system_volume_name()
-        self.computer_name: Optional[str] = self.get_computer_name()
-        self.cpu_type: Optional[str] = self.get_cpu_type()
-        self.bios_info: Optional[str] = self.get_bios_info()
-        self.windows_serial: Optional[str] = self.get_windows_serial()
-        self.disk_serial: Optional[str] = self.get_disk_serial()
-        self.windows_username: Optional[str] = self.get_windows_username()
+class WinHardwareData(HardWareDataABC):
 
     @staticmethod
     def get_system_volume_serial() -> Optional[str]:
@@ -225,7 +215,7 @@ class HardwareData:
         return None
 
     @staticmethod
-    def get_windows_username() -> Optional[str]:
+    def get_computer_username() -> Optional[str]:
         """获取Windows用户名（使用环境变量）"""
         try:
             return os.environ.get("USERNAME", os.environ.get("USER", None))
@@ -242,7 +232,7 @@ class HardwareData:
 - BIOS Info: {self.bios_info}
 - Windows Serial: {self.windows_serial}
 - Disk Serial: {self.disk_serial}
-- Windows Username: {self.windows_username}"""
+- Windows Username: {self.computer_username}"""
 
     def to_dict(self) -> dict:
         """返回硬件信息的字典表示"""
@@ -254,5 +244,5 @@ class HardwareData:
             "bios_info": self.bios_info,
             "windows_serial": self.windows_serial,
             "disk_serial": self.disk_serial,
-            "windows_username": self.windows_username,
+            "windows_username": self.computer_username,
         }

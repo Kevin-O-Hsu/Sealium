@@ -1,4 +1,5 @@
 # tests/test_hardwaredata.py
+# works for windows
 
 import unittest
 from unittest.mock import patch, MagicMock
@@ -11,13 +12,13 @@ from sealium.utils.fetch import HardwareData
 class TestHardwareDataUnit(unittest.TestCase):
     """单元测试：模拟所有外部依赖，确保逻辑分支正确"""
 
-    @patch('sealium.utils.fetch.hardwaredata.ctypes.windll.kernel32.GetVolumeInformationW', side_effect=Exception("API崩溃"))
+    @patch('sealium.utils.fetch.hardwaredata_win.ctypes.windll.kernel32.GetVolumeInformationW', side_effect=Exception("API崩溃"))
     def test_get_system_volume_serial_exception_returns_none(self, mock_api):
         result = HardwareData.get_system_volume_serial()
         self.assertIsNone(result)
 
-    @patch('sealium.utils.fetch.hardwaredata.ctypes.windll.kernel32.GetVolumeInformationW')
-    @patch('sealium.utils.fetch.hardwaredata.ctypes.create_unicode_buffer')
+    @patch('sealium.utils.fetch.hardwaredata_win.ctypes.windll.kernel32.GetVolumeInformationW')
+    @patch('sealium.utils.fetch.hardwaredata_win.ctypes.create_unicode_buffer')
     def test_get_system_volume_name_success(self, mock_buffer, mock_api):
         mock_vol_buf = MagicMock()
         mock_vol_buf.value = "OS"
@@ -29,30 +30,30 @@ class TestHardwareDataUnit(unittest.TestCase):
         result = HardwareData.get_system_volume_name()
         self.assertEqual(result, "OS")
 
-    @patch('sealium.utils.fetch.hardwaredata.ctypes.windll.kernel32.GetVolumeInformationW', return_value=False)
+    @patch('sealium.utils.fetch.hardwaredata_win.ctypes.windll.kernel32.GetVolumeInformationW', return_value=False)
     def test_get_system_volume_name_api_fail_returns_default(self, mock_api):
         result = HardwareData.get_system_volume_name()
         self.assertEqual(result, None)
 
-    @patch('sealium.utils.fetch.hardwaredata.ctypes.windll.kernel32.GetVolumeInformationW', side_effect=Exception("模拟异常"))
+    @patch('sealium.utils.fetch.hardwaredata_win.ctypes.windll.kernel32.GetVolumeInformationW', side_effect=Exception("模拟异常"))
     def test_get_system_volume_name_exception_returns_none(self, mock_api):
         result = HardwareData.get_system_volume_name()
         self.assertIsNone(result)
 
-    @patch.dict('sealium.utils.fetch.hardwaredata.os.environ', {"COMPUTERNAME": "DEVBOX"})
+    @patch.dict('sealium.utils.fetch.hardwaredata_win.os.environ', {"COMPUTERNAME": "DEVBOX"})
     def test_get_computer_name_from_env(self):
         result = HardwareData.get_computer_name()
         self.assertEqual(result, "DEVBOX")
 
-    @patch.dict('sealium.utils.fetch.hardwaredata.os.environ', {}, clear=True)
-    @patch('sealium.utils.fetch.hardwaredata.platform.node', return_value="host-fallback")
+    @patch.dict('sealium.utils.fetch.hardwaredata_win.os.environ', {}, clear=True)
+    @patch('sealium.utils.fetch.hardwaredata_win.platform.node', return_value="host-fallback")
     def test_get_computer_name_fallback_to_platform_node(self, mock_node):
         result = HardwareData.get_computer_name()
         self.assertEqual(result, "host-fallback")
 
-    @patch('sealium.utils.fetch.hardwaredata.winreg.OpenKey')
-    @patch('sealium.utils.fetch.hardwaredata.winreg.QueryValueEx')
-    @patch('sealium.utils.fetch.hardwaredata.winreg.CloseKey')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.OpenKey')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.QueryValueEx')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.CloseKey')
     def test_get_cpu_type_success(self, mock_close, mock_query, mock_open):
         mock_query.return_value = ["Intel(R) Core(TM) i9-12900K", 1]
         result = HardwareData.get_cpu_type()
@@ -62,56 +63,56 @@ class TestHardwareDataUnit(unittest.TestCase):
             r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
         )
 
-    @patch('sealium.utils.fetch.hardwaredata.winreg.OpenKey', side_effect=Exception("注册表错误"))
-    @patch('sealium.utils.fetch.hardwaredata.platform.processor', return_value="ARM64 Family")
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.OpenKey', side_effect=Exception("注册表错误"))
+    @patch('sealium.utils.fetch.hardwaredata_win.platform.processor', return_value="ARM64 Family")
     def test_get_cpu_type_fallback_to_platform_processor(self, mock_processor, mock_open):
         result = HardwareData.get_cpu_type()
         self.assertEqual(result, "ARM64 Family")
 
-    @patch('sealium.utils.fetch.hardwaredata.winreg.OpenKey')
-    @patch('sealium.utils.fetch.hardwaredata.winreg.QueryValueEx')
-    @patch('sealium.utils.fetch.hardwaredata.winreg.CloseKey')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.OpenKey')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.QueryValueEx')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.CloseKey')
     def test_get_bios_info_list_joined(self, mock_close, mock_query, mock_open):
         mock_query.return_value = [["Dell Inc.", "1.5.6"], 1]
         result = HardwareData.get_bios_info()
         self.assertEqual(result, "Dell Inc. 1.5.6")
 
-    @patch('sealium.utils.fetch.hardwaredata.winreg.OpenKey')
-    @patch('sealium.utils.fetch.hardwaredata.winreg.QueryValueEx')
-    @patch('sealium.utils.fetch.hardwaredata.winreg.CloseKey')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.OpenKey')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.QueryValueEx')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.CloseKey')
     def test_get_bios_info_string(self, mock_close, mock_query, mock_open):
         mock_query.return_value = ["American Megatrends v5.12", 1]
         result = HardwareData.get_bios_info()
         self.assertEqual(result, "American Megatrends v5.12")
 
-    @patch('sealium.utils.fetch.hardwaredata.winreg.OpenKey', side_effect=Exception("BIOS键不存在"))
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.OpenKey', side_effect=Exception("BIOS键不存在"))
     def test_get_bios_info_exception_returns_none(self, mock_open):
         result = HardwareData.get_bios_info()
         self.assertIsNone(result)
 
-    @patch('sealium.utils.fetch.hardwaredata.winreg.OpenKey')
-    @patch('sealium.utils.fetch.hardwaredata.winreg.QueryValueEx')
-    @patch('sealium.utils.fetch.hardwaredata.winreg.CloseKey')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.OpenKey')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.QueryValueEx')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.CloseKey')
     def test_get_windows_serial_success(self, mock_close, mock_query, mock_open):
         mock_query.return_value = ["00330-80000-00000-AA999", 1]
         result = HardwareData.get_windows_serial()
         self.assertEqual(result, "00330-80000-00000-AA999")
 
-    @patch('sealium.utils.fetch.hardwaredata.winreg.OpenKey')
-    @patch('sealium.utils.fetch.hardwaredata.winreg.QueryValueEx', return_value=["", 1])
-    @patch('sealium.utils.fetch.hardwaredata.winreg.CloseKey') # Mock closekey
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.OpenKey')
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.QueryValueEx', return_value=["", 1])
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.CloseKey') # Mock closekey
     def test_get_windows_serial_empty_raises_valueerror(self, mock_close, mock_query, mock_open):
         with self.assertRaises(ValueError) as cm:
             HardwareData.get_windows_serial()
         self.assertIn("ProductId is empty", str(cm.exception))
 
-    @patch('sealium.utils.fetch.hardwaredata.winreg.OpenKey', side_effect=FileNotFoundError)
+    @patch('sealium.utils.fetch.hardwaredata_win.winreg.OpenKey', side_effect=FileNotFoundError)
     def test_get_windows_serial_file_not_found_raises(self, mock_open):
         with self.assertRaises(FileNotFoundError) as cm:
             HardwareData.get_windows_serial()
         self.assertIn("Registry path not found", str(cm.exception))
 
-    @patch('sealium.utils.fetch.hardwaredata.subprocess.run')
+    @patch('sealium.utils.fetch.hardwaredata_win.subprocess.run')
     def test_get_disk_serial_primary_method_success(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -122,7 +123,7 @@ class TestHardwareDataUnit(unittest.TestCase):
 
 
 
-    @patch('sealium.utils.fetch.hardwaredata.subprocess.run')
+    @patch('sealium.utils.fetch.hardwaredata_win.subprocess.run')
     def test_get_disk_serial_fallback_method_success(self, mock_run):
         calls = []
 
@@ -139,36 +140,36 @@ class TestHardwareDataUnit(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(result, "HDD-SERIAL-789")
         
-    @patch('sealium.utils.fetch.hardwaredata.subprocess.run', side_effect=Exception("PowerShell全挂"))
+    @patch('sealium.utils.fetch.hardwaredata_win.subprocess.run', side_effect=Exception("PowerShell全挂"))
     def test_get_disk_serial_all_methods_fail_returns_none(self, mock_run):
         result = HardwareData.get_disk_serial()
         self.assertIsNone(result)
 
-    @patch.dict('sealium.utils.fetch.hardwaredata.os.environ', {"USERNAME": "admin_user"})
-    def test_get_windows_username_success(self):
-        result = HardwareData.get_windows_username()
+    @patch.dict('sealium.utils.fetch.hardwaredata_win.os.environ', {"USERNAME": "admin_user"})
+    def test_get_computer_username_success(self):
+        result = HardwareData.get_computer_username()
         self.assertEqual(result, "admin_user")
 
-    @patch.dict('sealium.utils.fetch.hardwaredata.os.environ', {"USER": "linux_fallback"}, clear=True)
-    def test_get_windows_username_fallback_to_user(self):
-        result = HardwareData.get_windows_username()
+    @patch.dict('sealium.utils.fetch.hardwaredata_win.os.environ', {"USER": "linux_fallback"}, clear=True)
+    def test_get_computer_username_fallback_to_user(self):
+        result = HardwareData.get_computer_username()
         self.assertEqual(result, "linux_fallback")
 
-    @patch.dict('sealium.utils.fetch.hardwaredata.os.environ', {}, clear=True)
-    def test_get_windows_username_returns_none_if_no_env(self):
-        result = HardwareData.get_windows_username()
+    @patch.dict('sealium.utils.fetch.hardwaredata_win.os.environ', {}, clear=True)
+    def test_get_computer_username_returns_none_if_no_env(self):
+        result = HardwareData.get_computer_username()
         self.assertIsNone(result)
 
     # 测试初始化和数据结构
 
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_system_volume_serial', return_value="VOL-SN-001")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_system_volume_name', return_value="系统保留")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_computer_name', return_value="SERVER-01")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_cpu_type', return_value="Xeon Platinum")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_bios_info', return_value="HP v2.34")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_windows_serial', return_value="WIN-ENT-KEY-001")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_disk_serial', return_value="NVME-SN-5678")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_windows_username', return_value="sysadmin")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_system_volume_serial', return_value="VOL-SN-001")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_system_volume_name', return_value="系统保留")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_computer_name', return_value="SERVER-01")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_cpu_type', return_value="Xeon Platinum")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_bios_info', return_value="HP v2.34")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_windows_serial', return_value="WIN-ENT-KEY-001")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_disk_serial', return_value="NVME-SN-5678")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_computer_username', return_value="sysadmin")
     def test_hardware_data_init_and_to_dict(self, *mocks):
         hw = HardwareData()
         data = hw.to_dict()
@@ -186,14 +187,14 @@ class TestHardwareDataUnit(unittest.TestCase):
 
         self.assertEqual(data, expected)
 
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_system_volume_serial', return_value="1234ABCD")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_system_volume_name', return_value="C盘")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_computer_name', return_value="DESKTOP-ABC")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_cpu_type', return_value="Core i5")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_bios_info', return_value="Lenovo v1.8")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_windows_serial', return_value="OEM-KEY-XYZ")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_disk_serial', return_value="WD-WX123456")
-    @patch('sealium.utils.fetch.hardwaredata.HardwareData.get_windows_username', return_value="alice")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_system_volume_serial', return_value="1234ABCD")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_system_volume_name', return_value="C盘")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_computer_name', return_value="DESKTOP-ABC")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_cpu_type', return_value="Core i5")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_bios_info', return_value="Lenovo v1.8")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_windows_serial', return_value="OEM-KEY-XYZ")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_disk_serial', return_value="WD-WX123456")
+    @patch('sealium.utils.fetch.hardwaredata_win.WinHardwareData.get_computer_username', return_value="alice")
     def test_str_representation_contains_all_fields(self, *mocks):
         hw = HardwareData()
         output = str(hw)
@@ -229,8 +230,8 @@ class TestHardwareDataIntegration(unittest.TestCase):
             self.assertIsInstance(self.hw.cpu_type, str)
 
     def test_windows_username_is_non_empty_string(self):
-        self.assertIsInstance(self.hw.windows_username, str)
-        self.assertGreater(len(self.hw.windows_username.strip()), 0)
+        self.assertIsInstance(self.hw.computer_username, str)
+        self.assertGreater(len(self.hw.computer_username.strip()), 0)
 
     def test_system_volume_serial_is_valid_hex_or_none(self):
         if self.hw.system_volume_serial:
