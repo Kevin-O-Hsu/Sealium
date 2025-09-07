@@ -58,7 +58,9 @@ class AsymmetricEncryption:
             # 检查是否是有效的PEM格式
             if not key_data.startswith("-----BEGIN"):
                 raise ValueError("Invalid PEM format: missing BEGIN header")
-            self.public_key = serialization.load_pem_public_key(key_data.encode("utf-8"))
+            self.public_key = serialization.load_pem_public_key(
+                key_data.encode("utf-8")
+            )
         except ValueError as e:
             if "Unable to load PEM file" in str(e) or "MalformedFraming" in str(e):
                 raise ValueError(
@@ -82,7 +84,9 @@ class AsymmetricEncryption:
             # 检查是否是有效的PEM格式
             if not key_data.startswith("-----BEGIN"):
                 raise ValueError("Invalid PEM format: missing BEGIN header")
-            self.private_key = serialization.load_pem_private_key(key_data.encode("utf-8"), None)
+            self.private_key = serialization.load_pem_private_key(
+                key_data.encode("utf-8"), None
+            )
         except ValueError as e:
             if "Unable to load PEM file" in str(e) or "MalformedFraming" in str(e):
                 raise ValueError(
