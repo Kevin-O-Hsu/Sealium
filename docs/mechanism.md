@@ -1,4 +1,4 @@
-# Sealium Security Communication Mechanism (Revised)
+# Sealium Security Communication Mechanism
 
 ## 1. Overview
 
