@@ -7,13 +7,17 @@ import ctypes
 from ctypes import wintypes
 from .hardwaredata_abc import HardWareDataABC
 
+
 class WinHardwareData(HardWareDataABC):
 
     @staticmethod
     def get_system_volume_serial() -> Optional[str]:
-        """获取系统卷标序列号（使用Windows API）"""
+        """
+        获取系统卷标序列号（使用Windows API）。
+        Get system volume serial number (using Windows API).
+        """
         try:
-            # 定义函数原型
+            # 定义函数原型 / Define function prototype
             kernel32 = ctypes.windll.kernel32
             GetVolumeInformationW = kernel32.GetVolumeInformationW
             GetVolumeInformationW.argtypes = [
@@ -28,14 +32,14 @@ class WinHardwareData(HardWareDataABC):
             ]
             GetVolumeInformationW.restype = wintypes.BOOL
 
-            # 准备缓冲区
+            # 准备缓冲区 / Prepare buffers
             volume_name_buffer = ctypes.create_unicode_buffer(256)
             file_system_name_buffer = ctypes.create_unicode_buffer(256)
             volume_serial_number = wintypes.DWORD()
             max_component_length = wintypes.DWORD()
             file_system_flags = wintypes.DWORD()
 
-            # 调用 API
+            # 调用 API / Call API
             result = GetVolumeInformationW(
                 "C:\\",
                 volume_name_buffer,
@@ -48,7 +52,7 @@ class WinHardwareData(HardWareDataABC):
             )
 
             if result:
-                # 格式化为十六进制字符串
+                # 格式化为十六进制字符串 / Format as hexadecimal string
                 serial = volume_serial_number.value
                 return f"{serial:08X}"
             return None
@@ -57,7 +61,10 @@ class WinHardwareData(HardWareDataABC):
 
     @staticmethod
     def get_system_volume_name() -> Optional[str]:
-        """获取系统卷标名称（使用Windows API）"""
+        """
+        获取系统卷标名称（使用Windows API）。
+        Get system volume name (using Windows API).
+        """
         try:
             kernel32 = ctypes.windll.kernel32
             GetVolumeInformationW = kernel32.GetVolumeInformationW
@@ -98,7 +105,10 @@ class WinHardwareData(HardWareDataABC):
 
     @staticmethod
     def get_computer_name() -> Optional[str]:
-        """获取计算机名称（使用环境变量）"""
+        """
+        获取计算机名称（使用环境变量）。
+        Get computer name (using environment variable).
+        """
         try:
             return os.environ.get("COMPUTERNAME", platform.node())
         except Exception:
@@ -106,9 +116,12 @@ class WinHardwareData(HardWareDataABC):
 
     @staticmethod
     def get_cpu_type() -> Optional[str]:
-        """获取CPU类型（使用注册表）"""
+        """
+        获取CPU类型（使用注册表）。
+        Get CPU type (using Windows Registry).
+        """
         try:
-            # 从注册表获取CPU信息
+            # 从注册表获取CPU信息 / Get CPU info from registry
             key = winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE,
                 r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
@@ -121,9 +134,12 @@ class WinHardwareData(HardWareDataABC):
 
     @staticmethod
     def get_bios_info() -> Optional[str]:
-        """获取主板BIOS信息（使用注册表）"""
+        """
+        获取主板BIOS信息（使用注册表）。
+        Get motherboard BIOS info (using Windows Registry).
+        """
         try:
-            # 获取BIOS版本
+            # 获取BIOS版本 / Get BIOS version
             key = winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\BIOS"
             )
@@ -139,12 +155,13 @@ class WinHardwareData(HardWareDataABC):
     @staticmethod
     def get_windows_serial() -> str:
         """
-        Windows Product Serial Number
+        获取 Windows 产品序列号。
+        Get Windows Product Serial Number.
         """
         try:
             key_path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
 
-            # Open registry key, force 64-bit view
+            # 打开注册表键，强制使用 64 位视图 / Open registry key, force 64-bit view
             key = winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE,
                 key_path,
@@ -157,7 +174,8 @@ class WinHardwareData(HardWareDataABC):
             finally:
                 winreg.CloseKey(key)
 
-            # Validate result — 如果无效，直接抛 ValueError，不要被外层 except 捕获
+            # 验证结果 — 如果无效，直接抛 ValueError，不要被外层 except 捕获
+            # Validate result — if invalid, raise ValueError directly (not caught by outer except)
             if isinstance(product_id, str) and product_id.strip():
                 return product_id.strip()
             else:
@@ -177,9 +195,12 @@ class WinHardwareData(HardWareDataABC):
 
     @staticmethod
     def get_disk_serial() -> Optional[str]:
-        """获取硬盘序列号（使用PowerShell）"""
+        """
+        获取硬盘序列号（使用PowerShell）。
+        Get disk serial number (using PowerShell).
+        """
         try:
-            # 主方法
+            # 主方法 / Primary method
             cmd = [
                 "powershell",
                 "-Command",
@@ -195,9 +216,9 @@ class WinHardwareData(HardWareDataABC):
                         if serial:
                             return serial
         except Exception:
-            pass  # 忽略主方法异常
+            pass  # 忽略主方法异常 / Ignore primary method exception
 
-        # 备用方法
+        # 备用方法 / Fallback method
         try:
             cmd = [
                 "powershell",
@@ -216,14 +237,20 @@ class WinHardwareData(HardWareDataABC):
 
     @staticmethod
     def get_computer_username() -> Optional[str]:
-        """获取Windows用户名（使用环境变量）"""
+        """
+        获取Windows用户名（使用环境变量）。
+        Get Windows username (using environment variable).
+        """
         try:
             return os.environ.get("USERNAME", os.environ.get("USER", None))
         except Exception:
             return None
 
     def __str__(self) -> str:
-        """返回硬件信息的字符串表示"""
+        """
+        返回硬件信息的字符串表示。
+        Return string representation of hardware data.
+        """
         return f"""Hardware Data:
 - System Volume Serial: {self.system_volume_serial}
 - System Volume Name: {self.system_volume_name}
@@ -235,7 +262,10 @@ class WinHardwareData(HardWareDataABC):
 - Windows Username: {self.computer_username}"""
 
     def to_dict(self) -> dict:
-        """返回硬件信息的字典表示"""
+        """
+        返回硬件信息的字典表示。
+        Return dictionary representation of hardware data.
+        """
         return {
             "system_volume_serial": self.system_volume_serial,
             "system_volume_name": self.system_volume_name,
