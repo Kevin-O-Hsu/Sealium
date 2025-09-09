@@ -51,7 +51,7 @@ Perfect for:
 
 ## 📦 Installation
 
-> Installation instructions coming soon!
+> ```$ pip install sealium```
 
 ---
 
