@@ -73,3 +73,143 @@ src/
     └── docs/                           # 文档目录（可选）
         ├── architecture.md
         └── api.md
+
+
+各文件详细职责
+common/ – 共享模块
+crypto.py
+封装RSA加解密操作：generate_key_pair()（生成密钥对）、encrypt_with_public_key()、decrypt_with_private_key()、load_public_key()、load_private_key()，支持PEM格式。
+
+models.py
+定义客户端与服务端共享的数据结构，如 ActivationRequest（激活请求）、ActivationResponse（激活响应），使用Python dataclass或Pydantic模型，便于序列化。
+
+constants.py
+存储常量：RSA_KEY_SIZE=2048、TIME_STAMP_TOLERANCE_SECONDS=300（5分钟）、ACTIVATION_STATUS_UNUSED=0、ACTIVATION_STATUS_USED=1等。
+
+utils.py
+通用函数：generate_machine_code()（组合硬件信息后哈希）、generate_nonce()（生成随机数）、get_current_timestamp()（获取Unix时间戳）、is_valid_activation_code()（激活码格式校验）等。
+
+client/ – 客户端模块
+main.py
+客户端主程序入口，解析命令行参数或启动GUI，调用activator完成激活流程。
+
+activator.py
+核心激活逻辑：
+
+activate(activation_code)：获取机器码、生成nonce和时间戳，调用key_manager加密请求，发送HTTPS请求，处理响应，调用storage保存授权。
+
+verify_local_authorization()：启动时检查本地授权，若有效则返回True，否则触发激活。
+
+key_manager.py
+管理客户端密钥：
+
+load_or_generate_client_keys()：检查本地是否存在客户端密钥对，若无则生成并保存（使用虚拟化保护存储）。
+
+get_server_public_key()：从代码中内置的服务端公钥（硬编码或从资源加载）。
+
+encrypt_request(data)：使用服务端公钥加密请求数据。
+
+decrypt_response(ciphertext)：使用客户端私钥解密响应。
+
+storage.py
+本地授权存储：
+
+save_authorization(auth_data)：将授权信息（截止时间、功能位）使用机器码派生的密钥加密后存入本地文件（如license.dat）。
+
+load_authorization()：读取并解密，返回授权信息。
+
+is_authorization_valid()：检查是否过期。
+
+anti_debug.py
+反调试检测：检测调试器、虚拟机环境，若发现则退出或干扰（可根据需要实现）。这部分与虚拟化保护工具配合。
+
+config.py
+客户端配置：SERVER_URL = "https://your-server.com/api/v1/activation"、TIMEOUT = 10等。
+
+server/ – 服务端模块（基于FastAPI）
+app.py
+创建FastAPI应用，配置CORS、中间件（如日志），包含全局异常处理，挂载API路由。
+
+database.py
+使用SQLAlchemy创建engine、SessionLocal，提供get_db依赖函数。
+
+models.py
+SQLAlchemy ORM模型：ActivationCode（激活码表）包含字段：code, status, bound_machine_code, activated_at, expires_at, features（JSON）等。
+
+schemas.py
+Pydantic模型：ActivationRequest（解密后的请求体）、ActivationResponse（返回给客户端的明文响应）、ActivationCodeCreate（生成激活码时的输入）等。
+
+crud.py
+数据库操作函数：get_activation_code_by_code()、activate_code()（更新状态绑定机器码）、create_activation_code()等。
+
+api/v1/endpoints/activation.py
+激活接口路由：
+
+POST /activation：接收加密请求，调用security解密，校验时间戳、激活码，调用crud激活，构造响应并用客户端公钥加密返回。
+
+api/v1/endpoints/health.py
+健康检查接口：GET /health 返回{"status":"ok"}。
+
+api/v1/dependencies.py
+依赖注入：get_db（数据库会话）、get_current_activation_request（可能用于验证签名等）。
+
+core/security.py
+服务端安全核心：
+
+load_server_private_key()：从安全存储（环境变量或加密文件）加载私钥。
+
+decrypt_request(ciphertext)：用私钥解密请求。
+
+encrypt_response(plaintext, client_public_key)：用客户端公钥加密响应。
+
+check_timestamp(timestamp)：验证时间戳偏差。
+
+store_used_nonce(nonce, activation_code)：记录已使用的nonce（可放在Redis或内存缓存，防止重放）。
+
+core/config.py
+服务端配置：数据库URL、私钥路径、允许的时间差、激活码长度等，使用Pydantic Settings管理。
+
+core/exceptions.py
+自定义异常：InvalidActivationCodeError、ExpiredTimestampError、ReplayAttackError等。
+
+utils/activation_code.py
+激活码生成器：generate_activation_code() 生成随机字符串（如secrets.token_hex(16)），validate_activation_code_format() 校验格式。
+
+utils/timestamp.py
+时间戳处理：is_timestamp_valid(timestamp, tolerance)。
+
+migrations/
+Alembic迁移脚本，用于数据库版本管理。
+
+tests/ – 测试目录
+conftest.py
+测试夹具（如临时数据库、客户端密钥对）。
+
+test_client/
+客户端单元测试：测试机器码生成、加解密、本地存储等。
+
+test_server/
+服务端单元测试：测试API接口、数据库操作、安全校验。
+
+scripts/ – 辅助脚本
+generate_activation_codes.py
+命令行脚本，批量生成激活码并插入数据库。
+
+revoke_activation.py
+根据激活码或机器码撤销激活状态。
+
+init_db.py
+初始化数据库表及默认数据。
+
+requirements/ – 依赖管理
+base.txt
+公共依赖：cryptography、requests、pydantic等。
+
+client.txt
+客户端额外依赖：如pyinstaller（打包）、tkinter（GUI）等。
+
+server.txt
+服务端依赖：fastapi、uvicorn、sqlalchemy、alembic、psycopg2-binary（或其它数据库驱动）。
+
+dev.txt
+开发依赖：pytest、pytest-cov、black、mypy等。
