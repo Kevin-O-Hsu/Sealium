@@ -1,5 +1,3 @@
-# Sealium
-
 <p align="center">
   <img src="assets/Sealium-logo-transparent.png" width="400" alt="Sealium Logo">
 </p>
