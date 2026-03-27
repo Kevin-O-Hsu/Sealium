@@ -1,2 +1,4 @@
 nuitka
 cryptography
+wmi
+requests
