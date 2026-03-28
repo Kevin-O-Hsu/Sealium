@@ -6,6 +6,7 @@
 
 import json
 import sqlite3
+import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 from contextlib import contextmanager
@@ -28,11 +29,28 @@ class SQLiteDatabase:
         self.db_path = db_path
         self._connection = None
 
+    def _ensure_database_directory(self) -> None:
+        """确保数据库文件所在目录存在"""
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+
     def connect(self) -> None:
-        """建立数据库连接"""
+        """建立数据库连接，如果数据库不存在则自动创建"""
+        # 确保目录存在
+        self._ensure_database_directory()
+
+        # 检查数据库文件是否已存在
+        db_exists = os.path.exists(self.db_path)
+
+        # 连接数据库（如果文件不存在，SQLite 会自动创建）
         self._connection = sqlite3.connect(self.db_path)
         self._connection.row_factory = sqlite3.Row  # 返回字典形式行
         self._connection.execute("PRAGMA foreign_keys = ON")
+
+        # 如果是新创建的数据库，初始化表结构
+        if not db_exists:
+            self.init_tables()
 
     def close(self) -> None:
         """关闭数据库连接"""
@@ -118,6 +136,16 @@ class SQLiteDatabase:
                     status INTEGER NOT NULL DEFAULT 0
                 )
             """)
+
+    def is_initialized(self) -> bool:
+        """检查数据库是否已初始化（表是否存在）"""
+        try:
+            result = self.fetch_one(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='activation_codes'"
+            )
+            return result is not None
+        except Exception:
+            return False
 
 
 class ActivationCodeStorage:

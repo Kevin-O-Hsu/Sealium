@@ -71,7 +71,6 @@ class ActivationRequest:
     machine_code: str             # 机器码（硬件信息哈希）
     timestamp: int                # Unix 时间戳（秒）
     nonce: str                    # 客户端随机数（十六进制字符串）
-    client_pubkey: str            # 客户端 RSA 公钥（PEM 格式）
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -79,8 +78,7 @@ class ActivationRequest:
             "activation_code": self.activation_code,
             "machine_code": self.machine_code,
             "timestamp": self.timestamp,
-            "nonce": self.nonce,
-            "client_pubkey": self.client_pubkey,
+            "nonce": self.nonce
         }
 
     @classmethod
@@ -91,7 +89,6 @@ class ActivationRequest:
             machine_code=data["machine_code"],
             timestamp=data["timestamp"],
             nonce=data["nonce"],
-            client_pubkey=data["client_pubkey"],
         )
 
 
