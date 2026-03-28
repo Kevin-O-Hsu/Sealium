@@ -1,186 +1,131 @@
 src/
 └── sealium/
-    ├── __init__.py                     # 包标识，可定义版本号等
-    ├── common/                         # 共享模块，客户端与服务端共用
+    ├── __init__.py
+    ├── common/
     │   ├── __init__.py
-    │   ├── crypto.py                   # 加解密封装：RSA密钥生成、加密/解密、密钥格式转换等
-    │   ├── models.py                   # 数据模型定义（如激活码、授权信息的数据结构）
-    │   ├── constants.py                # 常量定义（如密钥长度、时间戳偏差阈值、激活码状态等）
-    │   └── utils.py                    # 通用工具函数（如机器码生成、随机数生成、时间戳处理）
+    │   ├── crypto.py
+    │   ├── models.py
+    │   ├── constants.py
+    │   └── utils.py
     │
-    ├── client/                         # 客户端模块
+    ├── client/
     │   ├── __init__.py
-    │   ├── activator.py                # 激活核心逻辑：机器码获取、请求构造、响应处理、本地存储
-    │   └── key_manager.py              # 客户端密钥管理：生成RSA密钥对、加载/保存私钥、获取服务端公钥
+    │   ├── activator.py
+    │   └── key_manager.py
     │
-    ├── server/                         # 服务端模块（基于FastAPI示例，也可用Flask）
+    ├── server/
     │   ├── __init__.py
-    │   ├── app.py                      # 应用入口（FastAPI实例创建、中间件、路由挂载）
-    │   ├── database.py                 # 数据库连接、会话管理（如SQLAlchemy）
-    │   ├── models.py                   # 服务端数据模型（数据库表定义：激活码、绑定记录等）
-    │   ├── schemas.py                  # Pydantic模型（请求/响应数据结构验证）
-    │   ├── crud.py                     # 数据库操作封装（增删改查激活码、绑定等）
-    │   ├── api/
-    │   │   ├── __init__.py
-    │   │   └── v1/
-    │   │       ├── __init__.py
-    │   │       ├── endpoints/
-    │   │       │   ├── __init__.py
-    │   │       │   ├── activation.py   # 激活接口路由：处理客户端激活请求
-    │   │       │   └── health.py       # 健康检查接口（可选）
-    │   │       └── dependencies.py     # 依赖注入（如获取数据库会话）
-    │   ├── core/
-    │   │   ├── __init__.py
-    │   │   ├── security.py             # 服务端安全相关：私钥加载、请求解密、响应加密、nonce管理
-    │   │   ├── config.py               # 服务端配置（从环境变量或配置文件读取）
-    │   │   └── exceptions.py           # 自定义异常
+    │   ├── app.py
+    │   ├── database.py
+    │   ├── models.py
+    │   ├── schemas.py
+    │   ├── config.py
+    │   ├── security.py
+    │   ├── exceptions.py
+    │   ├── activation.py
     │   └── utils/
     │       ├── __init__.py
-    │       ├── activation_code.py      # 激活码生成工具（随机生成、校验格式）
-    │       └── timestamp.py            # 时间戳校验工具
+    │       └── activation_code.py
     │
-    ├── tests/                          # 测试目录
+    ├── tests/
     │   ├── __init__.py
-    │   ├── conftest.py                 # pytest配置
-    │   ├── test_client/
-    │   │   ├── __init__.py
-    │   │   ├── test_activator.py       # 客户端激活逻辑测试
-    │   │   └── test_storage.py         # 本地存储测试
-    │   └── test_server/
-    │       ├── __init__.py
-    │       ├── test_activation_api.py  # 服务端接口测试
-    │       └── test_crud.py            # 数据库操作测试
+    │   ├── test_activation_api.py
+    │   └── test_crud.py
     │
-    ├── scripts/                        # 辅助脚本（部署、工具）
-    │   ├── generate_activation_codes.py  # 批量生成激活码脚本
-    │   ├── revoke_activation.py        # 撤销激活码脚本
-    │   └── init_db.py                  # 初始化数据库（建表、预置数据）
+    ├── scripts/
+    │   ├── generate_activation_codes.py
+    │   └── init_db.py
     │
-    ├── requirements/                   # 依赖管理
-    │   ├── base.txt                    # 公共依赖
-    │   ├── client.txt                  # 客户端额外依赖（如GUI库）
-    │   ├── server.txt                  # 服务端额外依赖（如FastAPI、SQLAlchemy）
-    │   └── dev.txt                     # 开发测试依赖
+    ├── requirements/
+    │   ├── base.txt
+    │   ├── server.txt
+    │   └── dev.txt
     │
-    └── docs/                           # 文档目录（可选）
-        ├── architecture.md
+    └── docs/
         └── api.md
 
+各文件详细职责：
 
-各文件详细职责
-common/ – 共享模块
-crypto.py
-封装RSA加解密操作：generate_key_pair()（生成密钥对）、encrypt_with_public_key()、decrypt_with_private_key()、load_public_key()、load_private_key()，支持PEM格式。
+common/__init__.py
+包标识，导出常用类和函数，便于外部导入
 
-models.py
-定义客户端与服务端共享的数据结构，如 ActivationRequest（激活请求）、ActivationResponse（激活响应），使用Python dataclass或Pydantic模型，便于序列化。
+common/crypto.py
+RSA加解密封装，提供RSAEncryptor类，支持生成RSA密钥对（默认4096位），从PEM格式加载公钥/私钥，使用OAEP填充进行加密解密，导出公钥/私钥为PEM或DER格式，提供密钥长度和最大明文长度属性
 
-constants.py
-存储常量：RSA_KEY_SIZE=2048、TIME_STAMP_TOLERANCE_SECONDS=300（5分钟）、ACTIVATION_STATUS_UNUSED=0、ACTIVATION_STATUS_USED=1等。
+common/models.py
+定义共享数据模型，包括ActivationStatus枚举（未激活/已激活），ActivationCode数据类（激活码字符串、绑定机器码、激活时间、授权截止时间、功能列表、激活状态），ActivationRequest数据类（激活码、机器码、时间戳、随机数、客户端公钥），ActivationResponse数据类（结果状态、授权截止日期、功能列表、服务端随机数、错误信息），提供to_dict和from_dict方法
 
-utils.py
-通用函数：generate_machine_code()（组合硬件信息后哈希）、generate_nonce()（生成随机数）、get_current_timestamp()（获取Unix时间戳）、is_valid_activation_code()（激活码格式校验）等。
+common/constants.py
+存储全局常量，包括RSA密钥大小（4096位），时间戳允许偏差秒数（300秒），激活码状态常量（未激活0/已激活1），HTTP请求超时时间，权威时间戳API地址，本地授权文件名，调试模式开关等
 
-client/ – 客户端模块
-activator.py
-核心激活逻辑：
+common/utils.py
+提供静态工具类Utils，包含生成Windows机器码方法（通过WMI获取硬盘序列号和MAC地址并SHA256哈希），生成随机数方法（secrets.token_hex），从远程API获取权威时间戳方法，获取本地当前时间戳方法，激活码格式校验方法，时间戳偏差校验方法
 
-activate(activation_code)：获取机器码、生成nonce和时间戳，调用key_manager加密请求，发送HTTPS请求，处理响应。
+client/__init__.py
+包标识，导出客户端主要类
 
+client/activator.py
+实现Activator类，核心激活逻辑包含：获取机器码，生成随机数nonce，获取权威时间戳，创建ClientKeyManager并生成临时密钥对，构造ActivationRequest并序列化为JSON，调用key_manager加密请求，通过requests发送HTTPS POST请求，接收响应后调用key_manager解密，解析JSON为ActivationResponse，验证响应中的nonce字段，返回激活结果，异常时抛出ActivationError
 
-key_manager.py
-管理客户端密钥：
-管理客户端密钥：
-生成客户端密钥对+把客户端公钥吐出去+把客户端密钥储存在变量里，等待使用客户端私钥解密响应。
-从代码中内置的服务端公钥（从资源加载）+使用服务端公钥加密请求数据。
-调用sealium.common.crypto.RSAEncryptor。
-注意服务器公钥适用于发送请求的，从安全储存加载（虚拟路径你可以留空）。
-客户端的每次请求的密钥对是用于返回时加密的，所以每次请求时都新生成。把公钥用函数导出，私钥也需要储存在变量里。
+client/key_manager.py
+实现ClientKeyManager类，初始化时接收服务端公钥PEM字符串并创建服务端加密器，提供generate_temp_keypair方法生成临时RSA密钥对（4096位）并返回公钥PEM字符串（私钥保存在实例变量中），提供encrypt_request方法使用服务端公钥加密请求数据，提供decrypt_response方法使用临时客户端私钥解密响应数据，提供has_temp_keypair属性判断是否已生成临时密钥对
 
-server/ – 服务端模块（基于FastAPI）
-app.py
-创建FastAPI应用，配置CORS、中间件（如日志），包含全局异常处理，挂载API路由。
+server/__init__.py
+包标识，导出服务端主要组件
 
-database.py
-使用SQLAlchemy创建engine、SessionLocal，提供get_db依赖函数。
+server/app.py
+创建FastAPI应用实例，配置CORS中间件，添加日志中间件，注册全局异常处理器，挂载激活路由（将activation.router包含进来），配置启动事件（如加载私钥到内存），返回app实例供uvicorn运行
 
-models.py
-SQLAlchemy ORM模型：ActivationCode（激活码表）包含字段：code, status, bound_machine_code, activated_at, expires_at, features（JSON）等。
+server/database.py
+创建SQLAlchemy引擎，配置连接池，创建SessionLocal类，提供get_db依赖函数用于获取数据库会话，提供数据库初始化函数
 
-schemas.py
-Pydantic模型：ActivationRequest（解密后的请求体）、ActivationResponse（返回给客户端的明文响应）、ActivationCodeCreate（生成激活码时的输入）等。
+server/models.py
+定义SQLAlchemy ORM模型，包括ActivationCodeModel表（激活码字段：code主键，status状态，bound_machine_code绑定机器码，activated_at激活时间，expires_at授权截止时间，features JSON格式功能列表），提供模型序列化方法
 
-crud.py
-数据库操作函数：get_activation_code_by_code()、activate_code()（更新状态绑定机器码）、create_activation_code()等。
+server/schemas.py
+定义Pydantic模型，包括ActivationCodeCreate（生成激活码时的输入），ActivationCodeResponse（激活码信息响应），ActivationRequestSchema（解密后的请求体验证），ActivationResponseSchema（返回给客户端的明文响应），ErrorResponseSchema（错误响应格式）
 
-api/v1/endpoints/activation.py
-激活接口路由：
+server/config.py
+使用Pydantic Settings管理配置，包括数据库连接URL，服务端私钥路径或PEM字符串，私钥密码，允许的时间戳偏差秒数，激活码长度，CORS允许来源列表，日志级别，Redis连接URL（用于nonce缓存，可选），支持从环境变量或.env文件读取
 
-POST /activation：接收加密请求，调用security解密，校验时间戳、激活码，调用crud激活，构造响应并用客户端公钥加密返回。
+server/security.py
+服务端安全核心，提供加载服务端私钥方法（从配置文件路径或PEM字符串加载），解密请求方法（接收密文字节，使用服务端私钥解密并返回JSON字典），加密响应方法（接收响应字典和客户端公钥PEM字符串，使用客户端公钥加密返回密文字节），时间戳校验方法（接收时间戳，与当前服务器时间比较，返回是否在允许偏差内），nonce管理方法（检查nonce是否已使用，存储已使用的nonce组合，使用内存字典或Redis实现防重放）
 
-api/v1/endpoints/health.py
-健康检查接口：GET /health 返回{"status":"ok"}。
+server/exceptions.py
+定义自定义异常类，包括InvalidActivationCodeError（激活码无效），ActivationCodeAlreadyUsedError（激活码已使用），ExpiredTimestampError（时间戳过期），ReplayAttackError（重放攻击），EncryptionError（加解密错误），DatabaseError（数据库错误），所有异常继承自ActivationBaseError
 
-api/v1/dependencies.py
-依赖注入：get_db（数据库会话）、get_current_activation_request（可能用于验证签名等）。
+server/activation.py
+定义APIRouter，实现POST /activation接口，接收加密请求（二进制数据），调用security.decrypt_request解密得到请求字典，验证激活码格式，调用时间戳校验，检查nonce防重放，查询数据库获取激活码记录，验证激活码状态是否为未激活，更新激活码状态为已激活并绑定机器码、写入激活时间和授权信息，构造ActivationResponseSchema响应字典，调用security.encrypt_response加密，返回加密后的二进制响应，异常时返回加密的错误响应
 
-core/security.py
-服务端安全核心：
+server/utils/__init__.py
+包标识，导出激活码工具函数
 
-load_server_private_key()：从安全存储（环境变量或加密文件）加载私钥。
+server/utils/activation_code.py
+提供激活码生成函数（使用secrets.token_hex生成128位随机数，可选添加前缀或分隔符），提供激活码格式验证函数（检查长度和字符集），提供批量生成激活码函数（接收数量、有效期等信息返回激活码列表）
 
-decrypt_request(ciphertext)：用私钥解密请求。
+tests/__init__.py
+测试包标识
 
-encrypt_response(plaintext, client_public_key)：用客户端公钥加密响应。
+tests/test_activation_api.py
+服务端激活接口测试，包括正常激活流程测试，激活码不存在测试，激活码已使用测试，时间戳过期测试，重放攻击测试，无效加密数据测试，使用pytest和httpx测试客户端
 
-check_timestamp(timestamp)：验证时间戳偏差。
+tests/test_crud.py
+数据库操作测试，包括激活码创建测试，查询激活码测试，激活码状态更新测试，绑定机器码测试，使用测试数据库和fixture
 
-store_used_nonce(nonce, activation_code)：记录已使用的nonce（可放在Redis或内存缓存，防止重放）。
+scripts/generate_activation_codes.py
+命令行脚本，支持批量生成激活码，接收参数如数量、授权截止日期、授权功能列表，连接数据库并插入激活码记录，输出生成的激活码列表到控制台或文件
 
-core/config.py
-服务端配置：数据库URL、私钥路径、允许的时间差、激活码长度等，使用Pydantic Settings管理。
+scripts/init_db.py
+数据库初始化脚本，创建所有表，可选创建默认数据（如测试激活码），使用Alembic或直接调用SQLAlchemy的create_all方法
 
-core/exceptions.py
-自定义异常：InvalidActivationCodeError、ExpiredTimestampError、ReplayAttackError等。
+requirements/base.txt
+公共依赖包，包括cryptography（RSA加解密），requests（HTTP客户端），pydantic（数据验证），python-dotenv（环境变量管理）
 
-utils/activation_code.py
-激活码生成器：generate_activation_code() 生成随机字符串（如secrets.token_hex(16)），validate_activation_code_format() 校验格式。
+requirements/server.txt
+服务端依赖包，包括fastapi（Web框架），uvicorn（ASGI服务器），sqlalchemy（ORM），psycopg2-binary（PostgreSQL驱动）或pymysql（MySQL驱动），alembic（数据库迁移），redis（可选，用于nonce缓存）
 
-utils/timestamp.py
-时间戳处理：is_timestamp_valid(timestamp, tolerance)。
+requirements/dev.txt
+开发依赖包，包括pytest（测试框架），pytest-cov（覆盖率），httpx（测试客户端），black（代码格式化），mypy（类型检查），flake8（代码检查）
 
-migrations/
-Alembic迁移脚本，用于数据库版本管理。
-
-tests/ – 测试目录
-conftest.py
-测试夹具（如临时数据库、客户端密钥对）。
-
-test_client/
-客户端单元测试：测试机器码生成、加解密、本地存储等。
-
-test_server/
-服务端单元测试：测试API接口、数据库操作、安全校验。
-
-scripts/ – 辅助脚本
-generate_activation_codes.py
-命令行脚本，批量生成激活码并插入数据库。
-
-revoke_activation.py
-根据激活码或机器码撤销激活状态。
-
-init_db.py
-初始化数据库表及默认数据。
-
-requirements/ – 依赖管理
-base.txt
-公共依赖：cryptography、requests、pydantic等。
-
-client.txt
-客户端额外依赖：如pyinstaller（打包）、tkinter（GUI）等。
-
-server.txt
-服务端依赖：fastapi、uvicorn、sqlalchemy、alembic、psycopg2-binary（或其它数据库驱动）。
-
-dev.txt
-开发依赖：pytest、pytest-cov、black、mypy等。
+docs/api.md
+API文档，描述激活接口的请求格式（加密方式、数据格式），响应格式，错误码说明，时间戳要求，nonce机制，使用示例
