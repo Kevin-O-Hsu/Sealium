@@ -75,4 +75,3 @@ GPLv3 © Sealium Contributors
 <p align="center">
   <sub>Built with ❤️ for Python developers</sub>
 </p>
-```
