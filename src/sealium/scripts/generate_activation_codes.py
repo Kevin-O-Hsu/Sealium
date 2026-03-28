@@ -33,7 +33,7 @@ def generate_activation_codes(
     if features is None:
         features = []
     if db_path is None:
-        db_path = "I:/Programming/Sealium/data/database.db"
+        db_path = 'I:/Programming/Sealium/data/database.db'
 
     # 2. 解析截止时间
     expires_datetime = None
@@ -77,7 +77,7 @@ def generate_activation_codes(
 # 如果直接运行脚本，则使用默认参数生成示例激活码（便于测试）
 if __name__ == "__main__":
     # 示例：生成 5 个永久有效的激活码，无功能限制
-    codes = generate_activation_codes(5)
+    codes = generate_activation_codes(10)
     print("生成的激活码：")
     for c in codes:
         print(f"  {c}")
