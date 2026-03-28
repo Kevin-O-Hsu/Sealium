@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.backends import default_backend
 
-from sealium.common.constants import  RSA_KEY_SIZE
+from sealium.common.constants import RSA_KEY_SIZE
 
 class RSAEncryptor:
     """
