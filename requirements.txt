@@ -3,3 +3,4 @@ cryptography
 wmi
 requests
 fastapi
+uvicorn

@@ -6,7 +6,6 @@
 
 import json
 import requests
-from typing import Optional
 
 from sealium.common import constants
 from sealium.common.utils import Utils
