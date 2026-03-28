@@ -88,7 +88,7 @@ def activator(client_keys):
 def clean_unused_activation_code(storage):
         """生成一个干净的未使用激活码（每次测试后清理）"""
         from sealium.scripts.generate_activation_codes import generate_activation_codes
-        codes = generate_activation_codes(1)
+        codes = generate_activation_codes(1, db_path=storage.db.db_path)
         test_code = codes[0]
 
         yield test_code
@@ -107,7 +107,7 @@ def expired_activation_code(storage):
 
         # 生成一个过期的激活码（有效期设为昨天）
         expires_at = datetime.now() - timedelta(days=1)
-        codes = generate_activation_codes(1, expires_at=expires_at)
+        codes = generate_activation_codes(1, expires_at=expires_at, db_path=storage.db.db_path)
         test_code = codes[0]
 
         yield test_code
@@ -120,17 +120,42 @@ def expired_activation_code(storage):
 
 
 @pytest.fixture
-def used_activation_code(storage):
-        """生成一个已使用的激活码"""
+def used_activation_code_same_machine(storage, activator):
+        """生成一个已使用且绑定当前机器的激活码"""
         from sealium.scripts.generate_activation_codes import generate_activation_codes
 
         # 生成激活码
-        codes = generate_activation_codes(1)
+        codes = generate_activation_codes(1, db_path=storage.db.db_path)
         test_code = codes[0]
 
-        # 手动标记为已使用
+        # 获取当前机器码
+        machine_code = Utils.generate_machine_code()
+
+        # 手动标记为已使用并绑定当前机器码
         storage.update_status(test_code, ActivationStatus.USED)
-        storage.bind_machine_code(test_code, "used_machine_code", datetime.now())
+        storage.bind_machine_code(test_code, machine_code, datetime.now())
+
+        yield test_code
+
+        # 清理
+        try:
+                storage.delete(test_code)
+        except:
+                pass
+
+
+@pytest.fixture
+def used_activation_code_different_machine(storage):
+        """生成一个已使用且绑定其他机器的激活码"""
+        from sealium.scripts.generate_activation_codes import generate_activation_codes
+
+        # 生成激活码
+        codes = generate_activation_codes(1, db_path=storage.db.db_path)
+        test_code = codes[0]
+
+        # 手动标记为已使用并绑定其他机器码
+        storage.update_status(test_code, ActivationStatus.USED)
+        storage.bind_machine_code(test_code, "different_machine_code_12345", datetime.now())
 
         yield test_code
 
@@ -183,13 +208,43 @@ class TestActivationFlow:
                 assert len(after.bound_machine_code) == 64
                 assert all(c in "0123456789abcdef" for c in after.bound_machine_code)
 
+        def test_activation_same_code_twice_same_machine(self, activator, storage, used_activation_code_same_machine,
+                                                         server_health_check):
+                """测试同一机器重复激活同一个激活码（应该返回成功）"""
+                test_code = used_activation_code_same_machine
+
+                # 第一次激活已经在 fixture 中完成
+                # 第二次激活
+                response = activator.activate(test_code)
+
+                # 应该返回成功（已激活）
+                assert response.result == "success"
+                assert response.authorized_until is not None
+                assert response.features is not None
+                assert response.nonce is not None
+
+                # 验证数据库记录未改变
+                record = storage.get_by_code(test_code)
+                assert record.status == ActivationStatus.USED
+                assert record.bound_machine_code is not None
+
+        def test_activation_already_used_code_different_machine(self, activator, used_activation_code_different_machine,
+                                                                server_health_check):
+                """测试使用已被其他机器使用的激活码（应该返回错误）"""
+                test_code = used_activation_code_different_machine
+
+                response = activator.activate(test_code)
+
+                assert response.result == "error"
+                assert "已被其他设备使用" in response.error_msg or "已被使用" in response.error_msg
+
         def test_activation_with_features(self, activator, storage, server_health_check):
                 """测试带功能列表的激活码"""
                 from sealium.scripts.generate_activation_codes import generate_activation_codes
 
                 # 生成带功能列表的激活码
                 features = ["premium", "enterprise", "support"]
-                codes = generate_activation_codes(1, features=features)
+                codes = generate_activation_codes(1, features=features, db_path=storage.db.db_path)
                 test_code = codes[0]
 
                 try:
@@ -214,7 +269,7 @@ class TestActivationFlow:
                 # 生成带截止日期的激活码（30天后）
                 expires_at = datetime.now() + timedelta(days=30)
                 expires_str = expires_at.strftime("%Y-%m-%d")
-                codes = generate_activation_codes(1, expires_at=expires_at)
+                codes = generate_activation_codes(1, expires_at=expires_at, db_path=storage.db.db_path)
                 test_code = codes[0]
 
                 try:
@@ -238,27 +293,15 @@ class TestActivationFlow:
                 """测试使用无效的激活码"""
                 invalid_code = "invalid_code_12345"
 
-                # 无效激活码应该返回错误响应，不会抛出异常
                 response = activator.activate(invalid_code)
 
                 assert response.result == "error"
                 assert "激活码不存在" in response.error_msg or "无效" in response.error_msg
 
-        def test_activation_already_used_code(self, activator, used_activation_code, server_health_check):
-                """测试使用已使用的激活码"""
-                test_code = used_activation_code
-
-                # 已使用的激活码应该返回错误响应
-                response = activator.activate(test_code)
-
-                assert response.result == "error"
-                assert "已被使用" in response.error_msg
-
         def test_activation_expired_code(self, activator, expired_activation_code, server_health_check):
                 """测试使用已过期的激活码"""
                 test_code = expired_activation_code
 
-                # 已过期的激活码应该返回错误响应
                 response = activator.activate(test_code)
 
                 assert response.result == "error"
@@ -302,10 +345,10 @@ class TestActivationFlow:
                 # 等待一小段时间确保时间戳不同
                 time.sleep(0.1)
 
-                # 第二次激活（应该失败，因为激活码已被使用）
+                # 第二次激活（应该成功，因为同一机器重复激活返回成功）
                 response2 = activator.activate(test_code)
-                assert response2.result == "error"
-                assert "已被使用" in response2.error_msg
+                assert response2.result == "success"
+                assert response2.authorized_until is not None
 
         def test_machine_code_consistency(self, activator, storage, clean_unused_activation_code, server_health_check):
                 """测试机器码的一致性"""
@@ -379,7 +422,7 @@ class TestActivationFlow:
                 from sealium.scripts.generate_activation_codes import generate_activation_codes
 
                 # 生成激活码
-                codes = generate_activation_codes(1)
+                codes = generate_activation_codes(1, db_path=storage.db.db_path)
                 test_code = codes[0]
 
                 try:
@@ -399,7 +442,7 @@ class TestActivationFlow:
                 from sealium.scripts.generate_activation_codes import generate_activation_codes
 
                 # 生成 3 个激活码
-                codes = generate_activation_codes(3)
+                codes = generate_activation_codes(3, db_path=storage.db.db_path)
 
                 try:
                         for code in codes:
@@ -423,7 +466,7 @@ class TestActivationFlow:
                 from sealium.scripts.generate_activation_codes import generate_activation_codes
 
                 # 生成 2 个激活码
-                codes = generate_activation_codes(2)
+                codes = generate_activation_codes(2, db_path=storage.db.db_path)
 
                 try:
                         # 激活第一个
@@ -505,50 +548,6 @@ class TestActivationFlow:
 
                 assert response.result == "error"
                 assert "时间戳无效" in response.error_msg or "请同步时间" in response.error_msg
-
-
-# ==================== 性能测试（可选） ====================
-class TestPerformance:
-        """性能测试"""
-
-        @pytest.mark.skip(reason="性能测试需要较长时间，默认跳过")
-        def test_concurrent_activation(self, activator, storage, server_health_check):
-                """测试并发激活（使用多线程）"""
-                import threading
-                from sealium.scripts.generate_activation_codes import generate_activation_codes
-
-                # 生成多个激活码
-                codes = generate_activation_codes(10)
-                results = []
-
-                def activate_worker(code):
-                        try:
-                                response = activator.activate(code)
-                                results.append((code, response.result))
-                        except Exception as e:
-                                results.append((code, f"error: {e}"))
-
-                # 创建多个线程
-                threads = []
-                for code in codes:
-                        t = threading.Thread(target=activate_worker, args=(code,))
-                        threads.append(t)
-                        t.start()
-
-                # 等待所有线程完成
-                for t in threads:
-                        t.join()
-
-                # 验证结果
-                success_count = sum(1 for _, result in results if result == "success")
-                assert success_count == 10
-
-                # 清理
-                for code in codes:
-                        try:
-                                storage.delete(code)
-                        except:
-                                pass
 
 
 if __name__ == "__main__":
