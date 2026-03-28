@@ -16,4 +16,3 @@ ACTIVATION_STATUS_USED = 1           # 已激活
 # ==================== 网络请求相关 ====================
 REQUEST_TIMEOUT_SECONDS = 10         # HTTP 请求超时时间（秒）
 TIMESTAMP_API_URL = "https://aisenseapi.com/services/v1/timestamp"  # 权威时间戳 API
-        # 调试模式（生产环境设为 False）

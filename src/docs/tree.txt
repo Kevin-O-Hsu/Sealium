@@ -78,24 +78,9 @@ server/app.py
 
 server/database.py
 创建SQLAlchemy引擎，配置连接池，创建SessionLocal类，提供get_db依赖函数用于获取数据库会话，提供数据库初始化函数
-
-server/models.py
-定义SQLAlchemy ORM模型，包括ActivationCodeModel表（激活码字段：code主键，status状态，bound_machine_code绑定机器码，activated_at激活时间，expires_at授权截止时间，features JSON格式功能列表），提供模型序列化方法
-
-server/schemas.py
-定义Pydantic模型，包括ActivationCodeCreate（生成激活码时的输入），ActivationCodeResponse（激活码信息响应），ActivationRequestSchema（解密后的请求体验证），ActivationResponseSchema（返回给客户端的明文响应），ErrorResponseSchema（错误响应格式）
-
-server/config.py
-使用Pydantic Settings管理配置，包括数据库连接URL，服务端私钥路径或PEM字符串，私钥密码，允许的时间戳偏差秒数，激活码长度，CORS允许来源列表，日志级别，Redis连接URL（用于nonce缓存，可选），支持从环境变量或.env文件读取
-
-server/security.py
-服务端安全核心，提供加载服务端私钥方法（从配置文件路径或PEM字符串加载），解密请求方法（接收密文字节，使用服务端私钥解密并返回JSON字典），加密响应方法（接收响应字典和客户端公钥PEM字符串，使用客户端公钥加密返回密文字节），时间戳校验方法（接收时间戳，与当前服务器时间比较，返回是否在允许偏差内），nonce管理方法（检查nonce是否已使用，存储已使用的nonce组合，使用内存字典或Redis实现防重放）
-
-server/exceptions.py
-定义自定义异常类，包括InvalidActivationCodeError（激活码无效），ActivationCodeAlreadyUsedError（激活码已使用），ExpiredTimestampError（时间戳过期），ReplayAttackError（重放攻击），EncryptionError（加解密错误），DatabaseError（数据库错误），所有异常继承自ActivationBaseError
-
+[
 server/activation.py
-定义APIRouter，实现POST /activation接口，接收加密请求（二进制数据），调用security.decrypt_request解密得到请求字典，验证激活码格式，调用时间戳校验，检查nonce防重放，查询数据库获取激活码记录，验证激活码状态是否为未激活，更新激活码状态为已激活并绑定机器码、写入激活时间和授权信息，构造ActivationResponseSchema响应字典，调用security.encrypt_response加密，返回加密后的二进制响应，异常时返回加密的错误响应
+定义APIRouter，实现POST /activation接口，接收加密请求（二进制数据），调用security.decrypt_request解密得到请求字典，验证激活码格式，调用时间戳校验，检查nonce防重放，查询数据库获取激活码记录，验证激活码状态是否为未激活，更新激活码状态为已激活并绑定机器码、写入激活时间和授权信息，调用security.encrypt_response加密，返回加密后的二进制响应，异常时返回加密的错误响应
 
 server/utils/__init__.py
 包标识，导出激活码工具函数
