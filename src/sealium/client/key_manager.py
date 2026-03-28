@@ -5,7 +5,6 @@
 """
 
 import os
-from typing import Optional
 
 from sealium.common.crypto import RSAEncryptor
 

@@ -3,22 +3,16 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/sealium/">
-    <img src="https://img.shields.io/pypi/v/sealium?style=flat-square&logo=pypi&logoColor=white&color=2c8cff" alt="PyPI">
-  </a>
-  <a href="LICENSE">
-    <img src="https://img.shields.io/badge/license-GPLv3-2c8cff?style=flat-square" alt="License">
-  </a>
-  <a href="https://www.python.org">
-    <img src="https://img.shields.io/badge/python-3.13+-2c8cff?style=flat-square&logo=python&logoColor=white" alt="Python">
-  </a>
+  <a href="https://pypi.org/project/sealium/"><img src="https://img.shields.io/pypi/v/sealium?style=flat-square&logo=pypi&color=2c8cff" alt="PyPI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-2c8cff?style=flat-square" alt="License"></a>
+  <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.13+-2c8cff?style=flat-square&logo=python" alt="Python"></a>
 </p>
 
 ---
 
-### Secure License & Activation Management
+# 🔒 Sealium
 
-Sealium is a lightweight Python library that handles **license key generation, software activation, and hardware binding** with a focus on security and simplicity.
+**Secure license key generation, software activation, and hardware binding.**
 
 ---
 
@@ -26,11 +20,12 @@ Sealium is a lightweight Python library that handles **license key generation, s
 
 | Feature | Description |
 |---------|-------------|
-| **License Keys** | Generate cryptographically secure license keys |
-| **Activation** | Manage activations with hardware binding support |
-| **Validation** | Verify license status with expiration checks |
-| **Simple API** | Clean, intuitive interface |
-| **Minimal Dependencies** | Lightweight with no unnecessary bloat |
+| 🔐 **RSA-4096 Encryption** | Secure client-server communication |
+| 🎫 **License Keys** | Cryptographically secure random keys |
+| 💻 **Hardware Binding** | Bind licenses to specific machines |
+| ⏰ **Expiration Control** | Set expiry dates and feature flags |
+| 🛡️ **Anti-Replay** | Nonce-based replay attack prevention |
+| 🌐 **Client-Server** | Ready-to-use FastAPI backend |
 
 ---
 
@@ -45,36 +40,39 @@ pip install sealium
 ## 🚀 Quick Example
 
 ```python
-from sealium import LicenseManager
+from sealium.client.activator import Activator
 
-# Create a license
-license = LicenseManager.generate_license(
-    product="Sealium Pro",
-    expires="2025-12-31"
+# Activate a license
+activator = Activator(
+    server_url="http://localhost:8000/v1/activation",
+    server_public_key_pem=open("data/server_public.pem").read(),
+    client_private_key_pem=open("data/client_private.pem").read()
 )
 
-# Validate activation
-if LicenseManager.verify_license(license.key, hardware_id):
-    print("✅ License activated successfully")
+response = activator.activate("your-license-key")
+
+if response.result == "success":
+    print(f"✅ Activated until {response.authorized_until}")
 else:
-    print("❌ Invalid license or hardware mismatch")
+    print(f"❌ {response.error_msg}")
 ```
 
 ---
 
 ## 🔧 Requirements
 
-- Python 3.13 or higher
-- No external dependencies required
+- Python 3.13+
+- cryptography, requests, fastapi, uvicorn, sqlalchemy
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **GPLv3 License**. See the [LICENSE](LICENSE) file for details.
+GPLv3 © Sealium Contributors
 
 ---
 
 <p align="center">
   <sub>Built with ❤️ for Python developers</sub>
 </p>
+```

@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import Dict, Any, Set, Tuple
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
-from pathlib import Path
 
 from sealium.common import constants
 from sealium.common.utils import Utils
@@ -21,24 +20,16 @@ from sealium.common.models import (
 )
 from sealium.common.crypto import RSAEncryptor
 from sealium.server.database import SQLiteDatabase, ActivationCodeStorage
-
-
-# ==================== 全局配置 ====================
-# 服务端私钥路径
-SERVER_PRIVATE_KEY_PATH = Path('I:/Programming/Sealium/data/server_private.pem')
-# 客户端公钥路径（固定，与服务端通信的客户端使用同一对密钥）
-CLIENT_PUBLIC_KEY_PATH = Path('I:/Programming/Sealium/data/client_public.pem')
-# 数据库路径
-DATABASE_PATH = Path('I:/Programming/Sealium/data/database.db')
+from sealium.server.config import config
 
 
 # ==================== 全局资源初始化 ====================
 # 加载服务端私钥
 def load_server_private_key() -> RSAEncryptor:
     """从文件加载服务端私钥"""
-    if not os.path.exists(SERVER_PRIVATE_KEY_PATH):
-        raise RuntimeError(f"服务端私钥文件不存在: {SERVER_PRIVATE_KEY_PATH}")
-    with open(SERVER_PRIVATE_KEY_PATH, "rb") as f:
+    if not config.SERVER_PRIVATE_KEY_PATH.exists():
+        raise RuntimeError(f"服务端私钥文件不存在: {config.SERVER_PRIVATE_KEY_PATH}")
+    with open(config.SERVER_PRIVATE_KEY_PATH, "rb") as f:
         pem_data = f.read()
     return RSAEncryptor.from_private_key_pem(pem_data)
 
@@ -46,9 +37,9 @@ def load_server_private_key() -> RSAEncryptor:
 # 加载客户端公钥
 def load_client_public_key() -> RSAEncryptor:
     """从文件加载客户端公钥"""
-    if not os.path.exists(CLIENT_PUBLIC_KEY_PATH):
-        raise RuntimeError(f"客户端公钥文件不存在: {CLIENT_PUBLIC_KEY_PATH}")
-    with open(CLIENT_PUBLIC_KEY_PATH, "rb") as f:
+    if not config.CLIENT_PUBLIC_KEY_PATH.exists():
+        raise RuntimeError(f"客户端公钥文件不存在: {config.CLIENT_PUBLIC_KEY_PATH}")
+    with open(config.CLIENT_PUBLIC_KEY_PATH, "rb") as f:
         pem_data = f.read()
     return RSAEncryptor.from_public_key_pem(pem_data)
 
@@ -57,25 +48,18 @@ _server_encryptor = load_server_private_key()   # 用于解密客户端请求
 _client_encryptor = load_client_public_key()    # 用于加密响应给客户端
 
 # 初始化数据库连接
-_db = SQLiteDatabase(DATABASE_PATH)
+_db = SQLiteDatabase(str(config.DATABASE_PATH))
 _db.connect()
 _db.init_tables()  # 确保表存在
 _storage = ActivationCodeStorage(_db)
 
 # 防重放：记录已使用的 (activation_code, nonce) 组合
-# 注意：生产环境应使用 Redis 等持久化缓存，此处仅为示例
 _used_nonces: Set[Tuple[str, str]] = set()
 
 
 # ==================== 辅助函数 ====================
 def decrypt_request(raw_data: bytes) -> Dict[str, Any]:
-    """
-    解密客户端请求（使用服务端私钥）
-
-    :param raw_data: 加密的二进制数据
-    :return: 解密后的请求字典
-    :raises: ValueError 如果解密失败或 JSON 解析失败
-    """
+    """解密客户端请求（使用服务端私钥）"""
     try:
         plain = _server_encryptor.decrypt(raw_data)
         return json.loads(plain.decode("utf-8"))
@@ -84,13 +68,7 @@ def decrypt_request(raw_data: bytes) -> Dict[str, Any]:
 
 
 def encrypt_response(data: Dict[str, Any]) -> bytes:
-    """
-    使用客户端公钥加密响应（固定公钥）
-
-    :param data: 响应字典
-    :return: 加密后的二进制数据
-    :raises: ValueError 如果加密失败
-    """
+    """使用客户端公钥加密响应（固定公钥）"""
     try:
         plain = json.dumps(data).encode("utf-8")
         return _client_encryptor.encrypt(plain)
@@ -99,44 +77,32 @@ def encrypt_response(data: Dict[str, Any]) -> bytes:
 
 
 def validate_timestamp(timestamp: int) -> bool:
-    """
-    校验时间戳是否在允许范围内
-
-    :param timestamp: 客户端时间戳（Unix 秒）
-    :return: 是否有效
-    """
+    """校验时间戳是否在允许范围内"""
     now = Utils.get_current_timestamp()
-    return abs(now - timestamp) <= constants.TIME_STAMP_TOLERANCE_SECONDS
+    return abs(now - timestamp) <= config.TIME_STAMP_TOLERANCE_SECONDS
 
 
 def check_replay(activation_code: str, nonce: str) -> bool:
-    """
-    检查是否为重放攻击
-
-    :param activation_code: 激活码
-    :param nonce: 随机数
-    :return: True 表示重放（已使用过），False 表示新请求
-    """
+    """检查是否为重放攻击"""
     key = (activation_code, nonce)
     if key in _used_nonces:
         return True
     _used_nonces.add(key)
 
-    if len(_used_nonces) > 100:
+    if len(_used_nonces) > config.REPLAY_CACHE_SIZE:
         _used_nonces.clear()
     return False
 
 
 # ==================== 路由 ====================
-router = APIRouter(prefix="/v1", tags=["activation"])
+router = APIRouter(prefix=config.API_PREFIX, tags=["activation"])
 
 
-@router.post("/activation")
+@router.post(config.ACTIVATION_PATH)
 async def activate(request: Request) -> Response:
     """
     激活接口
-
-    接收加密的激活请求，验证后返回加密的响应。
+    接收加密的激活请求，验证后返回加密的响应
     """
     # 1. 接收二进制数据
     raw_data = await request.body()
