@@ -9,6 +9,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.backends import default_backend
 
+from sealium.common.constants import  RSA_KEY_SIZE
 
 class RSAEncryptor:
     """
@@ -29,10 +30,10 @@ class RSAEncryptor:
         self._private_key = private_key
 
     @classmethod
-    def generate(cls, key_size: int = 4096) -> "RSAEncryptor":
+    def generate(cls, key_size: int = RSA_KEY_SIZE) -> "RSAEncryptor":
         """
         生成新的 RSA 密钥对
-        :param key_size: 密钥长度，默认 4096
+        :param key_size: 密钥长度，默认 2048
         :return: RSAEncryptor 实例（同时包含公钥和私钥）
         """
         private_key = rsa.generate_private_key(

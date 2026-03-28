@@ -11,6 +11,7 @@ import time
 import requests
 import wmi
 
+from sealium.common.constants import  TIMESTAMP_API_URL, REQUEST_TIMEOUT_SECONDS
 
 class Utils:
     """
@@ -52,14 +53,14 @@ class Utils:
         return secrets.token_hex(length)
 
     @staticmethod
-    def get_timestamp_from_api(timeout: int = 5) -> int:
+    def get_timestamp_from_api(timeout: int = REQUEST_TIMEOUT_SECONDS) -> int:
         """
         从远程 API 获取权威时间戳（Unix 秒级）
         :param timeout: 请求超时时间（秒）
         :return: 时间戳（秒）
         :raises: 请求失败时抛出异常（可根据需要捕获）
         """
-        url = "https://aisenseapi.com/services/v1/timestamp"
+        url = TIMESTAMP_API_URL
         resp = requests.get(url, timeout=timeout)
         resp.raise_for_status()
         data = resp.json()
