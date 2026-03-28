@@ -94,20 +94,18 @@ main.py
 activator.py
 核心激活逻辑：
 
-activate(activation_code)：获取机器码、生成nonce和时间戳，调用key_manager加密请求，发送HTTPS请求，处理响应，调用storage保存授权。
+activate(activation_code)：获取机器码、生成nonce和时间戳，调用key_manager加密请求，发送HTTPS请求，处理响应。
 
 verify_local_authorization()：启动时检查本地授权，若有效则返回True，否则触发激活。
 
 key_manager.py
 管理客户端密钥：
-
-generate_client_keys()：生成客户端密钥对。
-
-get_server_public_key()：从代码中内置的服务端公钥（从资源加载）。
-
-encrypt_request(data)：使用服务端公钥加密请求数据。
-
-decrypt_response(ciphertext)：使用客户端私钥解密响应。
+管理客户端密钥：
+生成客户端密钥对+把客户端公钥吐出去+把客户端密钥储存在变量里，等待使用客户端私钥解密响应。
+从代码中内置的服务端公钥（从资源加载）+使用服务端公钥加密请求数据。
+调用sealium.common.crypto.RSAEncryptor。
+注意服务器公钥适用于发送请求的，从安全储存加载（虚拟路径你可以留空）。
+客户端的每次请求的密钥对是用于返回时加密的，所以每次请求时都新生成。把公钥用函数导出，私钥也需要储存在变量里。
 
 
 config.py
