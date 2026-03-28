@@ -13,8 +13,6 @@ src/
     │   ├── main.py                     # 客户端入口程序（命令行或GUI入口）
     │   ├── activator.py                # 激活核心逻辑：机器码获取、请求构造、响应处理、本地存储
     │   ├── key_manager.py              # 客户端密钥管理：生成RSA密钥对、加载/保存私钥、获取服务端公钥
-    │   ├── storage.py                  # 本地授权存储：加密保存授权信息、读取授权、校验有效性
-    │   ├── anti_debug.py               # 反调试/完整性检查（可选，与虚拟化保护配合）
     │   └── config.py                   # 客户端配置（如服务端URL、超时等）
     │
     ├── server/                         # 服务端模块（基于FastAPI示例，也可用Flask）
@@ -103,25 +101,14 @@ verify_local_authorization()：启动时检查本地授权，若有效则返回T
 key_manager.py
 管理客户端密钥：
 
-load_or_generate_client_keys()：检查本地是否存在客户端密钥对，若无则生成并保存（使用虚拟化保护存储）。
+generate_client_keys()：生成客户端密钥对。
 
-get_server_public_key()：从代码中内置的服务端公钥（硬编码或从资源加载）。
+get_server_public_key()：从代码中内置的服务端公钥（从资源加载）。
 
 encrypt_request(data)：使用服务端公钥加密请求数据。
 
 decrypt_response(ciphertext)：使用客户端私钥解密响应。
 
-storage.py
-本地授权存储：
-
-save_authorization(auth_data)：将授权信息（截止时间、功能位）使用机器码派生的密钥加密后存入本地文件（如license.dat）。
-
-load_authorization()：读取并解密，返回授权信息。
-
-is_authorization_valid()：检查是否过期。
-
-anti_debug.py
-反调试检测：检测调试器、虚拟机环境，若发现则退出或干扰（可根据需要实现）。这部分与虚拟化保护工具配合。
 
 config.py
 客户端配置：SERVER_URL = "https://your-server.com/api/v1/activation"、TIMEOUT = 10等。
