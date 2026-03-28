@@ -152,11 +152,24 @@ async def activate(request: Request) -> Response:
         encrypted = encrypt_response(error_response.to_dict())
         return Response(content=encrypted, media_type="application/octet-stream")
 
-    # 8. 检查激活码状态
-    if activation_record.status != ActivationStatus.UNUSED:
-        error_response = ActivationResponse.error("激活码已被使用")
-        encrypted = encrypt_response(error_response.to_dict())
-        return Response(content=encrypted, media_type="application/octet-stream")
+    # 8. 检查激活码是否已被使用
+    if activation_record.status == ActivationStatus.USED:
+        # 如果已被使用，检查是否同一机器
+        if activation_record.bound_machine_code == activation_req.machine_code:
+            # 同一机器，直接返回成功（已激活）
+            server_nonce = Utils.generate_nonce(16)
+            success_response = ActivationResponse.success(
+                authorized_until=activation_record.expires_at.strftime("%Y-%m-%d") if activation_record.expires_at else "永久",
+                features=activation_record.features,
+                nonce=server_nonce,
+            )
+            encrypted_response = encrypt_response(success_response.to_dict())
+            return Response(content=encrypted_response, media_type="application/octet-stream")
+        else:
+            # 不同机器，返回已被使用错误
+            error_response = ActivationResponse.error("激活码已被其他设备使用")
+            encrypted = encrypt_response(error_response.to_dict())
+            return Response(content=encrypted, media_type="application/octet-stream")
 
     # 9. 检查是否过期
     if activation_record.expires_at and activation_record.expires_at < datetime.now():
