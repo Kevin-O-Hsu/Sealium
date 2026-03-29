@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from sealium.client.activator import Activator, ActivationError
-from sealium.common.models import ActivationStatus, ActivationCode
+from sealium.common.models import ActivationStatus
 from sealium.common.utils import Utils
 from sealium.server.database import SQLiteDatabase, ActivationCodeStorage
 

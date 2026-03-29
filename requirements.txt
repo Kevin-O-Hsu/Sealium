@@ -4,3 +4,4 @@ wmi
 requests
 fastapi
 uvicorn
+pytest

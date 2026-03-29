@@ -10,6 +10,8 @@ import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 from contextlib import contextmanager
+from pathlib import Path
+
 
 from sealium.common.models import ActivationStatus, ActivationCode
 
@@ -20,7 +22,7 @@ class SQLiteDatabase:
     管理连接、执行 SQL、事务等
     """
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str | Path):
         """
         初始化数据库连接
 
