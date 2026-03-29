@@ -126,7 +126,8 @@ class SQLiteDatabase:
     def init_tables(self) -> None:
         """初始化数据库表结构"""
         with self.transaction():
-            self.execute("""
+            self.execute(
+                """
                 CREATE TABLE IF NOT EXISTS activation_codes (
                     code TEXT PRIMARY KEY,
                     bound_machine_code TEXT,
@@ -135,7 +136,8 @@ class SQLiteDatabase:
                     features TEXT,
                     status INTEGER NOT NULL DEFAULT 0
                 )
-            """)
+            """
+            )
 
     def is_initialized(self) -> bool:
         """检查数据库是否已初始化（表是否存在）"""
@@ -204,7 +206,7 @@ class ActivationCodeStorage:
                     self._datetime_to_str(activation_code.expires_at),
                     self._serialize_features(activation_code.features),
                     activation_code.status.value,
-                )
+                ),
             )
 
     def get_by_code(self, code: str) -> Optional[ActivationCode]:
@@ -215,8 +217,7 @@ class ActivationCodeStorage:
         :return: ActivationCode 对象或 None
         """
         row = self.db.fetch_one(
-            "SELECT * FROM activation_codes WHERE code = ?",
-            (code,)
+            "SELECT * FROM activation_codes WHERE code = ?", (code,)
         )
         if not row:
             return None
@@ -239,10 +240,12 @@ class ActivationCodeStorage:
         with self.db.transaction():
             self.db.execute(
                 "UPDATE activation_codes SET status = ? WHERE code = ?",
-                (status.value, code)
+                (status.value, code),
             )
 
-    def bind_machine_code(self, code: str, machine_code: str, activated_at: datetime) -> None:
+    def bind_machine_code(
+        self, code: str, machine_code: str, activated_at: datetime
+    ) -> None:
         """
         绑定机器码并记录激活时间
 
@@ -257,7 +260,12 @@ class ActivationCodeStorage:
                 SET bound_machine_code = ?, activated_at = ?, status = ? 
                 WHERE code = ?
                 """,
-                (machine_code, self._datetime_to_str(activated_at), ActivationStatus.USED.value, code)
+                (
+                    machine_code,
+                    self._datetime_to_str(activated_at),
+                    ActivationStatus.USED.value,
+                    code,
+                ),
             )
 
     def update_expires_at(self, code: str, expires_at: datetime) -> None:
@@ -270,7 +278,7 @@ class ActivationCodeStorage:
         with self.db.transaction():
             self.db.execute(
                 "UPDATE activation_codes SET expires_at = ? WHERE code = ?",
-                (self._datetime_to_str(expires_at), code)
+                (self._datetime_to_str(expires_at), code),
             )
 
     def delete(self, code: str) -> None:
@@ -280,10 +288,7 @@ class ActivationCodeStorage:
         :param code: 激活码字符串
         """
         with self.db.transaction():
-            self.db.execute(
-                "DELETE FROM activation_codes WHERE code = ?",
-                (code,)
-            )
+            self.db.execute("DELETE FROM activation_codes WHERE code = ?", (code,))
 
     def list_all(self) -> List[ActivationCode]:
         """
@@ -294,12 +299,14 @@ class ActivationCodeStorage:
         rows = self.db.fetch_all("SELECT * FROM activation_codes")
         result = []
         for row in rows:
-            result.append(ActivationCode(
-                activation_code=row["code"],
-                bound_machine_code=row["bound_machine_code"],
-                activated_at=self._str_to_datetime(row["activated_at"]),
-                expires_at=self._str_to_datetime(row["expires_at"]),
-                features=self._deserialize_features(row["features"]),
-                status=ActivationStatus(row["status"]),
-            ))
+            result.append(
+                ActivationCode(
+                    activation_code=row["code"],
+                    bound_machine_code=row["bound_machine_code"],
+                    activated_at=self._str_to_datetime(row["activated_at"]),
+                    expires_at=self._str_to_datetime(row["expires_at"]),
+                    features=self._deserialize_features(row["features"]),
+                    status=ActivationStatus(row["status"]),
+                )
+            )
         return result

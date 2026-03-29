@@ -11,6 +11,7 @@ from cryptography.hazmat.backends import default_backend
 
 from sealium.common.constants import RSA_KEY_SIZE
 
+
 class RSAEncryptor:
     """
     RSA 加解密器

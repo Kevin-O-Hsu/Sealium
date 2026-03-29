@@ -11,7 +11,8 @@ import time
 import requests
 import wmi
 
-from sealium.common.constants import  TIMESTAMP_API_URL, REQUEST_TIMEOUT_SECONDS
+from sealium.common.constants import TIMESTAMP_API_URL, REQUEST_TIMEOUT_SECONDS
+
 
 class Utils:
     """
@@ -40,7 +41,7 @@ class Utils:
                 mac = nic.MACAddress
                 break
         # 组合并哈希
-        combined = f"{disk_serial or ''}{mac or ''}".encode('utf-8')
+        combined = f"{disk_serial or ''}{mac or ''}".encode("utf-8")
         return hashlib.sha256(combined).hexdigest()
 
     @staticmethod

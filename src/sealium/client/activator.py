@@ -15,6 +15,7 @@ from sealium.client.key_manager import ClientKeyManager
 
 class ActivationError(Exception):
     """激活相关异常"""
+
     pass
 
 
@@ -24,7 +25,9 @@ class Activator:
     负责执行完整的激活流程
     """
 
-    def __init__(self, server_url: str, server_public_key_pem: str, client_private_key_pem: str):
+    def __init__(
+        self, server_url: str, server_public_key_pem: str, client_private_key_pem: str
+    ):
         """
         初始化激活器
 
@@ -33,7 +36,9 @@ class Activator:
         :param client_private_key_pem: 客户端私钥 PEM 字符串
         """
         self.server_url = server_url
-        self.key_manager = ClientKeyManager(server_public_key_pem, client_private_key_pem)
+        self.key_manager = ClientKeyManager(
+            server_public_key_pem, client_private_key_pem
+        )
 
     def activate(self, activation_code: str) -> ActivationResponse:
         """
@@ -51,7 +56,9 @@ class Activator:
 
         # 3. 获取权威时间戳
         try:
-            timestamp = Utils.get_timestamp_from_api(timeout=constants.REQUEST_TIMEOUT_SECONDS)
+            timestamp = Utils.get_timestamp_from_api(
+                timeout=constants.REQUEST_TIMEOUT_SECONDS
+            )
         except Exception as e:
             raise ActivationError(f"获取时间戳失败: {e}")
 
@@ -62,7 +69,7 @@ class Activator:
             timestamp=timestamp,
             nonce=nonce_c,
         )
-        request_plain = json.dumps(request_obj.to_dict()).encode('utf-8')
+        request_plain = json.dumps(request_obj.to_dict()).encode("utf-8")
 
         # 5. 加密请求
         try:
@@ -75,8 +82,8 @@ class Activator:
             resp = requests.post(
                 self.server_url,
                 data=encrypted_request,
-                headers={'Content-Type': 'application/octet-stream'},
-                timeout=constants.REQUEST_TIMEOUT_SECONDS
+                headers={"Content-Type": "application/octet-stream"},
+                timeout=constants.REQUEST_TIMEOUT_SECONDS,
             )
             resp.raise_for_status()
         except requests.RequestException as e:
@@ -90,7 +97,7 @@ class Activator:
 
         # 8. 解析 JSON
         try:
-            response_dict = json.loads(decrypted_data.decode('utf-8'))
+            response_dict = json.loads(decrypted_data.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             raise ActivationError(f"解析响应失败: {e}")
 

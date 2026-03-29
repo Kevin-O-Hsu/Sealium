@@ -44,8 +44,8 @@ def load_client_public_key() -> RSAEncryptor:
     return RSAEncryptor.from_public_key_pem(pem_data)
 
 
-_server_encryptor = load_server_private_key()   # 用于解密客户端请求
-_client_encryptor = load_client_public_key()    # 用于加密响应给客户端
+_server_encryptor = load_server_private_key()  # 用于解密客户端请求
+_client_encryptor = load_client_public_key()  # 用于加密响应给客户端
 
 # 初始化数据库连接
 _db = SQLiteDatabase(str(config.DATABASE_PATH))
@@ -159,12 +159,18 @@ async def activate(request: Request) -> Response:
             # 同一机器，直接返回成功（已激活）
             server_nonce = Utils.generate_nonce(16)
             success_response = ActivationResponse.success(
-                authorized_until=activation_record.expires_at.strftime("%Y-%m-%d") if activation_record.expires_at else "永久",
+                authorized_until=(
+                    activation_record.expires_at.strftime("%Y-%m-%d")
+                    if activation_record.expires_at
+                    else "永久"
+                ),
                 features=activation_record.features,
                 nonce=server_nonce,
             )
             encrypted_response = encrypt_response(success_response.to_dict())
-            return Response(content=encrypted_response, media_type="application/octet-stream")
+            return Response(
+                content=encrypted_response, media_type="application/octet-stream"
+            )
         else:
             # 不同机器，返回已被使用错误
             error_response = ActivationResponse.error("激活码已被其他设备使用")
@@ -180,9 +186,7 @@ async def activate(request: Request) -> Response:
     # 10. 更新激活码：绑定机器码、激活时间、状态
     try:
         _storage.bind_machine_code(
-            activation_req.activation_code,
-            activation_req.machine_code,
-            datetime.now()
+            activation_req.activation_code, activation_req.machine_code, datetime.now()
         )
     except Exception as e:
         error_response = ActivationResponse.error(f"数据库更新失败: {str(e)}")
@@ -192,7 +196,11 @@ async def activate(request: Request) -> Response:
     # 11. 构造成功响应
     server_nonce = Utils.generate_nonce(16)
     success_response = ActivationResponse.success(
-        authorized_until=activation_record.expires_at.strftime("%Y-%m-%d") if activation_record.expires_at else "永久",
+        authorized_until=(
+            activation_record.expires_at.strftime("%Y-%m-%d")
+            if activation_record.expires_at
+            else "永久"
+        ),
         features=activation_record.features,
         nonce=server_nonce,
     )

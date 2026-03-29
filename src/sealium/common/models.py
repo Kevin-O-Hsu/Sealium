@@ -12,8 +12,9 @@ from enum import IntEnum
 
 class ActivationStatus(IntEnum):
     """激活码状态枚举"""
-    UNUSED = 0          # 未激活
-    USED = 1            # 已激活
+
+    UNUSED = 0  # 未激活
+    USED = 1  # 已激活
 
 
 @dataclass
@@ -21,10 +22,11 @@ class ActivationCode:
     """
     激活码信息模型（对应数据库记录）
     """
-    activation_code: str                      # 激活码字符串
+
+    activation_code: str  # 激活码字符串
     bound_machine_code: Optional[str] = None  # 绑定的机器码，未绑定时为 None
-    activated_at: Optional[datetime] = None   # 激活时间
-    expires_at: Optional[datetime] = None     # 授权截止时间
+    activated_at: Optional[datetime] = None  # 激活时间
+    expires_at: Optional[datetime] = None  # 授权截止时间
     features: List[str] = field(default_factory=list)  # 授权功能列表（JSON 存储）
     status: ActivationStatus = ActivationStatus.UNUSED  # 激活状态
 
@@ -43,7 +45,9 @@ class ActivationCode:
         return {
             "activation_code": self.activation_code,
             "bound_machine_code": self.bound_machine_code,
-            "activated_at": self.activated_at.isoformat() if self.activated_at else None,
+            "activated_at": (
+                self.activated_at.isoformat() if self.activated_at else None
+            ),
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "features": self.features,
             "status": self.status.value,
@@ -55,8 +59,16 @@ class ActivationCode:
         return cls(
             activation_code=data["activation_code"],
             bound_machine_code=data.get("bound_machine_code"),
-            activated_at=datetime.fromisoformat(data["activated_at"]) if data.get("activated_at") else None,
-            expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
+            activated_at=(
+                datetime.fromisoformat(data["activated_at"])
+                if data.get("activated_at")
+                else None
+            ),
+            expires_at=(
+                datetime.fromisoformat(data["expires_at"])
+                if data.get("expires_at")
+                else None
+            ),
             features=data.get("features", []),
             status=ActivationStatus(data.get("status", 0)),
         )
@@ -67,10 +79,11 @@ class ActivationRequest:
     """
     客户端发送的激活请求（解密后的明文）
     """
-    activation_code: str          # 用户输入的激活码
-    machine_code: str             # 机器码（硬件信息哈希）
-    timestamp: int                # Unix 时间戳（秒）
-    nonce: str                    # 客户端随机数（十六进制字符串）
+
+    activation_code: str  # 用户输入的激活码
+    machine_code: str  # 机器码（硬件信息哈希）
+    timestamp: int  # Unix 时间戳（秒）
+    nonce: str  # 客户端随机数（十六进制字符串）
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -78,7 +91,7 @@ class ActivationRequest:
             "activation_code": self.activation_code,
             "machine_code": self.machine_code,
             "timestamp": self.timestamp,
-            "nonce": self.nonce
+            "nonce": self.nonce,
         }
 
     @classmethod
@@ -97,14 +110,17 @@ class ActivationResponse:
     """
     服务端返回的激活响应（加密前的明文）
     """
-    result: str                   # "success" 或 "error"
-    authorized_until: Optional[str] = None   # 授权截止日期（YYYY-MM-DD）
-    features: Optional[List[str]] = None     # 授权功能列表
-    nonce: Optional[str] = None              # 服务端随机数（防重放）
-    error_msg: Optional[str] = None          # 错误信息（当 result 为 error 时）
+
+    result: str  # "success" 或 "error"
+    authorized_until: Optional[str] = None  # 授权截止日期（YYYY-MM-DD）
+    features: Optional[List[str]] = None  # 授权功能列表
+    nonce: Optional[str] = None  # 服务端随机数（防重放）
+    error_msg: Optional[str] = None  # 错误信息（当 result 为 error 时）
 
     @classmethod
-    def success(cls, authorized_until: str, features: List[str], nonce: str) -> "ActivationResponse":
+    def success(
+        cls, authorized_until: str, features: List[str], nonce: str
+    ) -> "ActivationResponse":
         """创建成功响应"""
         return cls(
             result="success",

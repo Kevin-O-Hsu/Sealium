@@ -14,11 +14,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from sealium.client.activator import Activator, ActivationError
 
 # ==================== 配置 ====================
-PROJECT_ROOT = Path(__file__).resolve().parents[3]          # 项目根目录
-DATA_DIR = PROJECT_ROOT / "data"                           # 存放密钥和数据库的目录
-SERVER_PUBLIC_KEY_FILE = DATA_DIR / "server_public.pem"    # 服务端公钥
+PROJECT_ROOT = Path(__file__).resolve().parents[3]  # 项目根目录
+DATA_DIR = PROJECT_ROOT / "data"  # 存放密钥和数据库的目录
+SERVER_PUBLIC_KEY_FILE = DATA_DIR / "server_public.pem"  # 服务端公钥
 CLIENT_PRIVATE_KEY_FILE = DATA_DIR / "client_private.pem"  # 客户端私钥
-SERVER_URL = "http://localhost:8000/v1/activation"         # 激活接口地址
+SERVER_URL = "http://localhost:8000/v1/activation"  # 激活接口地址
+
 
 def main():
     print("=== Sealium 激活客户端示例 ===\n")
@@ -65,6 +66,7 @@ def main():
         print(f"服务器返回的随机数: {response.nonce}")
     else:
         print(f"\n❌ 激活失败: {response.error_msg}")
+
 
 if __name__ == "__main__":
     main()
