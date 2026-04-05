@@ -9,7 +9,13 @@ import hashlib
 import secrets
 import time
 import requests
-import wmi
+import os
+
+if os.name == 'nt':
+    import wmi
+    print("Running on Windows")
+else:
+    print("Running on Unix-like system (Linux/Mac)")
 
 from sealium.common.constants import TIMESTAMP_API_URL, REQUEST_TIMEOUT_SECONDS
 
