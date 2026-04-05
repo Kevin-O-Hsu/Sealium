@@ -157,7 +157,7 @@ async def activate(request: Request) -> Response:
         # 如果已被使用，检查是否同一机器
         if activation_record.bound_machine_code == activation_req.machine_code:
             # 同一机器，直接返回成功（已激活）
-            server_nonce = Utils.generate_nonce(16)
+            # 注意：使用客户端发送的 nonce 作为响应 nonce，防止重放攻击
             success_response = ActivationResponse.success(
                 authorized_until=(
                     activation_record.expires_at.strftime("%Y-%m-%d")
@@ -165,7 +165,7 @@ async def activate(request: Request) -> Response:
                     else "永久"
                 ),
                 features=activation_record.features,
-                nonce=server_nonce,
+                nonce=activation_req.nonce,  # 关键修改：返回客户端的 nonce
             )
             encrypted_response = encrypt_response(success_response.to_dict())
             return Response(
@@ -193,8 +193,7 @@ async def activate(request: Request) -> Response:
         encrypted = encrypt_response(error_response.to_dict())
         return Response(content=encrypted, media_type="application/octet-stream")
 
-    # 11. 构造成功响应
-    server_nonce = Utils.generate_nonce(16)
+    # 11. 构造成功响应（使用客户端的 nonce）
     success_response = ActivationResponse.success(
         authorized_until=(
             activation_record.expires_at.strftime("%Y-%m-%d")
@@ -202,7 +201,7 @@ async def activate(request: Request) -> Response:
             else "永久"
         ),
         features=activation_record.features,
-        nonce=server_nonce,
+        nonce=activation_req.nonce,  # 关键修改：返回客户端的 nonce
     )
 
     # 12. 加密响应

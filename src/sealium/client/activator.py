@@ -15,7 +15,6 @@ from sealium.client.key_manager import ClientKeyManager
 
 class ActivationError(Exception):
     """激活相关异常"""
-
     pass
 
 
@@ -108,6 +107,10 @@ class Activator:
         if activation_response.result == "success":
             if activation_response.nonce is None or len(activation_response.nonce) == 0:
                 raise ActivationError("响应中缺少 nonce")
+            # 关键验证：返回的 nonce 必须与客户端发送的 nonce 一致
+            if activation_response.nonce != nonce_c:
+                raise ActivationError("响应 nonce 不匹配，可能是重放攻击")
+
         # 错误响应不需要验证 nonce，直接返回即可
 
         return activation_response
