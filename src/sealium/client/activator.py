@@ -15,29 +15,25 @@ from sealium.client.key_manager import ClientKeyManager
 
 class ActivationError(Exception):
     """激活相关异常"""
+
     pass
 
 
 class Activator:
     """
     激活器
-    负责执行完整的激活流程
+    负责执行完整的激活流程（无私钥版本）
     """
 
-    def __init__(
-        self, server_url: str, server_public_key_pem: str, client_private_key_pem: str
-    ):
+    def __init__(self, server_url: str, server_public_key_pem: str):
         """
         初始化激活器
 
         :param server_url: 服务器激活接口 URL
         :param server_public_key_pem: 服务端公钥 PEM 字符串
-        :param client_private_key_pem: 客户端私钥 PEM 字符串
         """
         self.server_url = server_url
-        self.key_manager = ClientKeyManager(
-            server_public_key_pem, client_private_key_pem
-        )
+        self.key_manager = ClientKeyManager(server_public_key_pem)
 
     def activate(self, activation_code: str) -> ActivationResponse:
         """
@@ -61,7 +57,7 @@ class Activator:
         except Exception as e:
             raise ActivationError(f"获取时间戳失败: {e}")
 
-        # 4. 构造请求明文（不再包含 client_pubkey）
+        # 4. 构造请求明文（不包含任何密钥）
         request_obj = ActivationRequest(
             activation_code=activation_code,
             machine_code=machine_code,
@@ -70,9 +66,9 @@ class Activator:
         )
         request_plain = json.dumps(request_obj.to_dict()).encode("utf-8")
 
-        # 5. 加密请求
+        # 5. 构建双层加密请求（自动生成 AES 密钥并加密）
         try:
-            encrypted_request = self.key_manager.encrypt_request(request_plain)
+            encrypted_request = self.key_manager.build_encrypted_request(request_plain)
         except Exception as e:
             raise ActivationError(f"加密请求失败: {e}")
 
@@ -88,7 +84,7 @@ class Activator:
         except requests.RequestException as e:
             raise ActivationError(f"网络请求失败: {e}")
 
-        # 7. 解密响应
+        # 7. 解密响应（使用相同的 AES 密钥）
         try:
             decrypted_data = self.key_manager.decrypt_response(resp.content)
         except Exception as e:
@@ -103,14 +99,9 @@ class Activator:
         # 9. 创建响应对象
         activation_response = ActivationResponse.from_dict(response_dict)
 
-        # 10. 验证 nonce（仅成功响应需要 nonce）
+        # 10. 验证 nonce
         if activation_response.result == "success":
-            if activation_response.nonce is None or len(activation_response.nonce) == 0:
-                raise ActivationError("响应中缺少 nonce")
-            # 关键验证：返回的 nonce 必须与客户端发送的 nonce 一致
             if activation_response.nonce != nonce_c:
                 raise ActivationError("响应 nonce 不匹配，可能是重放攻击")
-
-        # 错误响应不需要验证 nonce，直接返回即可
 
         return activation_response

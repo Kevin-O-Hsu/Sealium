@@ -11,8 +11,9 @@ import time
 import requests
 import os
 
-if os.name == 'nt':
+if os.name == "nt":
     import wmi
+
     print("Running on Windows")
 else:
     print("Running on Unix-like system (Linux/Mac)")

@@ -1,78 +1,84 @@
 # src/sealium/client/key_manager.py
 """
-客户端密钥管理模块
-负责：加载固定客户端密钥对、加载服务端公钥、加密请求/解密响应
+客户端密钥管理模块（无私钥版本）
+负责：加载服务端公钥、生成临时 AES 密钥、构建双层加密请求、解密 AES 响应
 """
 
-import os
-
-from sealium.common.crypto import RSAEncryptor
+from typing import Optional
+from sealium.common.crypto import RSAEncryptor, AESEncryptor
+from sealium.common.constants import RSA_KEY_SIZE, AES_GCM_NONCE_SIZE, AES_GCM_TAG_SIZE
 
 
 class ClientKeyManager:
     """
-    客户端密钥管理器（固定密钥对版本）
+    客户端密钥管理器（无私钥，仅持有服务端公钥）
 
     使用流程：
-    1. 初始化时加载服务端公钥和客户端密钥对（从文件或硬编码）
-    2. 使用 encrypt_request() 加密请求数据
-    3. 使用 decrypt_response() 解密响应数据
+    1. 初始化时加载服务端公钥
+    2. 每次请求调用 build_encrypted_request() 生成临时 AES 密钥并加密请求
+    3. 收到响应后调用 decrypt_response() 使用相同的 AES 密钥解密
     """
 
-    def __init__(self, server_public_key_pem: str, client_private_key_pem: str):
+    def __init__(self, server_public_key_pem: str):
         """
         初始化密钥管理器
 
         :param server_public_key_pem: 服务端公钥 PEM 字符串
-        :param client_private_key_pem: 客户端私钥 PEM 字符串
         """
-        # 创建服务端加密器（仅公钥，用于加密请求）
         self._server_encryptor = RSAEncryptor.from_public_key_pem(server_public_key_pem)
-        # 创建客户端解密器（包含私钥，用于解密响应）
-        self._client_decryptor = RSAEncryptor.from_private_key_pem(
-            client_private_key_pem
+        self._current_aes_key: Optional[bytes] = None  # 当前会话的 AES 密钥
+
+    def build_encrypted_request(self, request_plain: bytes) -> bytes:
+        """
+        构建双层加密请求：
+        1. 生成临时 AES-256 密钥
+        2. 用 AES-GCM 加密请求明文，得到 (nonce, ciphertext, tag)
+        3. 用服务器 RSA 公钥加密 AES 密钥
+        4. 组装二进制包：RSA_encrypted_aes_key (固定长度) + nonce + ciphertext + tag
+
+        :param request_plain: 请求明文（JSON 字节）
+        :return: 加密后的请求数据包
+        """
+        # 1. 生成临时 AES 密钥
+        self._current_aes_key = AESEncryptor.generate_key()
+
+        # 2. AES 加密请求明文
+        nonce, ciphertext, tag = AESEncryptor.encrypt(
+            self._current_aes_key, request_plain
         )
 
-        # 导出客户端公钥（供服务端使用）
-        self._client_public_key_pem = self._client_decryptor.export_public_key().decode(
-            "utf-8"
-        )
+        # 3. RSA 加密 AES 密钥
+        encrypted_aes_key = self._server_encryptor.encrypt(self._current_aes_key)
 
-    def encrypt_request(self, plaintext: bytes) -> bytes:
+        # 4. 组装数据包
+        # 格式: [encrypted_aes_key (512 bytes)] + [nonce (12 bytes)] + [ciphertext (变长)] + [tag (16 bytes)]
+        result = encrypted_aes_key + nonce + ciphertext + tag
+        return result
+
+    def decrypt_response(self, response_data: bytes) -> bytes:
         """
-        使用服务端公钥加密请求数据
+        解密 AES 加密的响应数据
+        响应包格式: [nonce (12 bytes)] + [ciphertext (变长)] + [tag (16 bytes)]
 
-        :param plaintext: 明文数据（字节）
-        :return: 密文（字节）
+        :param response_data: 服务器返回的二进制数据
+        :return: 解密后的明文（JSON 字节）
+        :raises ValueError: 如果尚未生成 AES 密钥或数据格式错误
         """
-        return self._server_encryptor.encrypt(plaintext)
+        if self._current_aes_key is None:
+            raise ValueError("未生成 AES 密钥，请先调用 build_encrypted_request()")
 
-    def decrypt_response(self, ciphertext: bytes) -> bytes:
-        """
-        使用客户端私钥解密响应数据
+        # 解析响应包
+        if len(response_data) < AES_GCM_NONCE_SIZE + AES_GCM_TAG_SIZE:
+            raise ValueError("响应数据过短，无法解析")
 
-        :param ciphertext: 密文（字节）
-        :return: 明文（字节）
-        """
-        return self._client_decryptor.decrypt(ciphertext)
+        nonce = response_data[:AES_GCM_NONCE_SIZE]
+        tag = response_data[-AES_GCM_TAG_SIZE:]
+        ciphertext = response_data[AES_GCM_NONCE_SIZE:-AES_GCM_TAG_SIZE]
 
-    def get_client_public_key(self) -> str:
-        """
-        获取客户端公钥 PEM 字符串（供服务端使用）
+        # 解密
+        plaintext = AESEncryptor.decrypt(self._current_aes_key, nonce, ciphertext, tag)
+        return plaintext
 
-        :return: 客户端公钥 PEM 字符串
-        """
-        return self._client_public_key_pem
-
-
-def load_client_keys_from_files(client_private_path: str) -> str:
-    """
-    从文件加载客户端私钥
-
-    :param client_private_path: 客户端私钥文件路径
-    :return: 客户端私钥 PEM 字符串
-    """
-    if not os.path.exists(client_private_path):
-        raise FileNotFoundError(f"客户端私钥文件不存在: {client_private_path}")
-    with open(client_private_path, "r") as f:
-        return f.read()
+    def clear_aes_key(self):
+        """清除当前会话的 AES 密钥（可选，用于内存清理）"""
+        self._current_aes_key = None

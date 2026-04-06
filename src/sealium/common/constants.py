@@ -6,8 +6,13 @@
 # ==================== RSA 相关 ====================
 RSA_KEY_SIZE: int = 4096  # 密钥长度（位）
 
+# ==================== AES 相关 ====================
+AES_KEY_SIZE: int = 256  # AES 密钥长度（位）
+AES_GCM_NONCE_SIZE: int = 12  # GCM 模式 nonce 长度（字节）
+AES_GCM_TAG_SIZE: int = 16  # GCM 认证标签长度（字节）
+
 # ==================== 时间相关 ====================
-TIME_STAMP_TOLERANCE_SECONDS = 300  # 时间戳允许偏差（秒），5分钟
+TIME_STAMP_TOLERANCE_SECONDS = 45
 
 # ==================== 激活码状态 ====================
 ACTIVATION_STATUS_UNUSED = 0  # 未激活

@@ -4,7 +4,7 @@
 测试前需要：
 1. 服务端已启动（uvicorn sealium.server.app:app --reload）
 2. 数据库文件存在
-3. 密钥文件存在
+3. 密钥文件存在（仅服务端公钥）
 
 本测试会：
 - 自动生成测试用的激活码
@@ -34,9 +34,8 @@ BASE_URL = "http://localhost:8000"
 ACTIVATION_URL = f"{BASE_URL}/v1/activation"
 HEALTH_URL = f"{BASE_URL}/health"
 
-# 密钥文件路径（与服务器配置一致）
+# 密钥文件路径（客户端只需要服务端公钥）
 SERVER_PUBLIC_KEY_PATH = Path("I:/Programming/Sealium/data/server_public.pem")
-CLIENT_PRIVATE_KEY_PATH = Path("I:/Programming/Sealium/data/client_private.pem")
 DATABASE_PATH = Path("I:/Programming/Sealium/data/database.db")
 
 
@@ -68,20 +67,16 @@ def storage(db):
 
 
 @pytest.fixture
-def client_keys():
-    """加载客户端密钥"""
+def server_public_key():
+    """加载服务端公钥"""
     with open(SERVER_PUBLIC_KEY_PATH, "r") as f:
-        server_pub_key = f.read()
-    with open(CLIENT_PRIVATE_KEY_PATH, "r") as f:
-        client_priv_key = f.read()
-    return server_pub_key, client_priv_key
+        return f.read()
 
 
 @pytest.fixture
-def activator(client_keys):
-    """创建激活器实例"""
-    server_pub_key, client_priv_key = client_keys
-    return Activator(ACTIVATION_URL, server_pub_key, client_priv_key)
+def activator(server_public_key):
+    """创建激活器实例（只需服务端公钥）"""
+    return Activator(ACTIVATION_URL, server_public_key)
 
 
 @pytest.fixture
@@ -123,7 +118,7 @@ def expired_activation_code(storage):
 
 
 @pytest.fixture
-def used_activation_code_same_machine(storage, activator):
+def used_activation_code_same_machine(storage):
     """生成一个已使用且绑定当前机器的激活码"""
     from sealium.scripts.generate_activation_codes import generate_activation_codes
 
@@ -322,15 +317,11 @@ class TestActivationFlow:
         assert response.result == "error"
         assert "已过期" in response.error_msg
 
-    def test_activation_network_error(
-        self, activator, server_health_check, client_keys
-    ):
+    def test_activation_network_error(self, server_public_key, server_health_check):
         """测试网络错误时抛出 ActivationError"""
-        server_pub_key, client_priv_key = client_keys
-
-        # 创建一个指向不存在端口的 activator（使用有效密钥）
+        # 创建一个指向不存在端口的 activator
         bad_activator = Activator(
-            "http://localhost:9999/v1/activation", server_pub_key, client_priv_key
+            "http://localhost:9999/v1/activation", server_public_key
         )
 
         with pytest.raises(ActivationError) as exc_info:
@@ -416,8 +407,8 @@ class TestActivationFlow:
         }
         request_plain = json.dumps(request_obj).encode("utf-8")
 
-        # 2. 加密请求
-        encrypted_request = activator.key_manager.encrypt_request(request_plain)
+        # 2. 使用新的加密方法构建请求包
+        encrypted_request = activator.key_manager.build_encrypted_request(request_plain)
 
         # 3. 发送请求
         resp = requests.post(ACTIVATION_URL, data=encrypted_request, timeout=10)
@@ -434,7 +425,7 @@ class TestActivationFlow:
             is_plain_json = False
         assert not is_plain_json, "响应应该是加密的，不应是明文 JSON"
 
-        # 6. 使用客户端私钥解密验证
+        # 6. 使用 activator 的 key_manager 解密验证
         decrypted = activator.key_manager.decrypt_response(resp.content)
         response_dict = json.loads(decrypted)
 

@@ -5,26 +5,24 @@
 """
 
 import json
-import os
 from datetime import datetime
 from typing import Dict, Any, Set, Tuple
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
-from sealium.common import constants
 from sealium.common.utils import Utils
 from sealium.common.models import (
     ActivationRequest,
     ActivationResponse,
     ActivationStatus,
 )
-from sealium.common.crypto import RSAEncryptor
+from sealium.common.crypto import RSAEncryptor, AESEncryptor
+from sealium.common.constants import RSA_KEY_SIZE, AES_GCM_NONCE_SIZE, AES_GCM_TAG_SIZE
 from sealium.server.database import SQLiteDatabase, ActivationCodeStorage
 from sealium.server.config import config
 
 
 # ==================== 全局资源初始化 ====================
-# 加载服务端私钥
 def load_server_private_key() -> RSAEncryptor:
     """从文件加载服务端私钥"""
     if not config.SERVER_PRIVATE_KEY_PATH.exists():
@@ -34,182 +32,164 @@ def load_server_private_key() -> RSAEncryptor:
     return RSAEncryptor.from_private_key_pem(pem_data)
 
 
-# 加载客户端公钥
-def load_client_public_key() -> RSAEncryptor:
-    """从文件加载客户端公钥"""
-    if not config.CLIENT_PUBLIC_KEY_PATH.exists():
-        raise RuntimeError(f"客户端公钥文件不存在: {config.CLIENT_PUBLIC_KEY_PATH}")
-    with open(config.CLIENT_PUBLIC_KEY_PATH, "rb") as f:
-        pem_data = f.read()
-    return RSAEncryptor.from_public_key_pem(pem_data)
+_server_encryptor = load_server_private_key()
 
-
-_server_encryptor = load_server_private_key()  # 用于解密客户端请求
-_client_encryptor = load_client_public_key()  # 用于加密响应给客户端
-
-# 初始化数据库连接
 _db = SQLiteDatabase(str(config.DATABASE_PATH))
 _db.connect()
-_db.init_tables()  # 确保表存在
+_db.init_tables()
 _storage = ActivationCodeStorage(_db)
 
-# 防重放：记录已使用的 (activation_code, nonce) 组合
 _used_nonces: Set[Tuple[str, str]] = set()
 
 
 # ==================== 辅助函数 ====================
-def decrypt_request(raw_data: bytes) -> Dict[str, Any]:
-    """解密客户端请求（使用服务端私钥）"""
-    try:
-        plain = _server_encryptor.decrypt(raw_data)
-        return json.loads(plain.decode("utf-8"))
-    except Exception as e:
-        raise ValueError(f"解密或解析请求失败: {e}")
+def parse_encrypted_request(raw_data: bytes) -> Tuple[bytes, bytes, bytes, bytes]:
+    rsa_encrypted_len = RSA_KEY_SIZE // 8
+    if len(raw_data) < rsa_encrypted_len + AES_GCM_NONCE_SIZE + AES_GCM_TAG_SIZE:
+        raise ValueError("请求数据包过短")
+    encrypted_aes_key = raw_data[:rsa_encrypted_len]
+    nonce = raw_data[rsa_encrypted_len : rsa_encrypted_len + AES_GCM_NONCE_SIZE]
+    rest = raw_data[rsa_encrypted_len + AES_GCM_NONCE_SIZE :]
+    if len(rest) < AES_GCM_TAG_SIZE:
+        raise ValueError("请求数据包缺少认证标签")
+    ciphertext = rest[:-AES_GCM_TAG_SIZE]
+    tag = rest[-AES_GCM_TAG_SIZE:]
+    return encrypted_aes_key, nonce, ciphertext, tag
 
 
-def encrypt_response(data: Dict[str, Any]) -> bytes:
-    """使用客户端公钥加密响应（固定公钥）"""
-    try:
-        plain = json.dumps(data).encode("utf-8")
-        return _client_encryptor.encrypt(plain)
-    except Exception as e:
-        raise ValueError(f"加密响应失败: {e}")
+def decrypt_request_and_get_key(
+    encrypted_aes_key: bytes, nonce: bytes, ciphertext: bytes, tag: bytes
+) -> Tuple[bytes, Dict[str, Any]]:
+    """解密请求，返回 (aes_key, request_dict)"""
+    aes_key = _server_encryptor.decrypt(encrypted_aes_key)
+    plaintext = AESEncryptor.decrypt(aes_key, nonce, ciphertext, tag)
+    req_dict = json.loads(plaintext.decode("utf-8"))
+    return aes_key, req_dict
+
+
+def encrypt_response_with_aes(response_dict: Dict[str, Any], aes_key: bytes) -> bytes:
+    plaintext = json.dumps(response_dict).encode("utf-8")
+    nonce, ciphertext, tag = AESEncryptor.encrypt(aes_key, plaintext)
+    return nonce + ciphertext + tag
 
 
 def validate_timestamp(timestamp: int) -> bool:
-    """校验时间戳是否在允许范围内"""
     now = Utils.get_current_timestamp()
     return abs(now - timestamp) <= config.TIME_STAMP_TOLERANCE_SECONDS
 
 
 def check_replay(activation_code: str, nonce: str) -> bool:
-    """检查是否为重放攻击"""
     key = (activation_code, nonce)
     if key in _used_nonces:
         return True
     _used_nonces.add(key)
-
     if len(_used_nonces) > config.REPLAY_CACHE_SIZE:
         _used_nonces.clear()
     return False
 
 
-# ==================== 路由 ====================
 router = APIRouter(prefix=config.API_PREFIX, tags=["activation"])
 
 
 @router.post(config.ACTIVATION_PATH)
 async def activate(request: Request) -> Response:
-    """
-    激活接口
-    接收加密的激活请求，验证后返回加密的响应
-    """
-    # 1. 接收二进制数据
     raw_data = await request.body()
     if not raw_data:
-        error_response = ActivationResponse.error("请求数据为空")
-        encrypted = encrypt_response(error_response.to_dict())
-        return Response(content=encrypted, media_type="application/octet-stream")
+        return Response(content=b"", status_code=400)
 
-    # 2. 解密请求
     try:
-        req_dict = decrypt_request(raw_data)
-    except ValueError as e:
-        error_response = ActivationResponse.error(f"解密失败: {str(e)}")
-        encrypted = encrypt_response(error_response.to_dict())
-        return Response(content=encrypted, media_type="application/octet-stream")
+        enc_aes_key, nonce, ciphertext, tag = parse_encrypted_request(raw_data)
+    except ValueError:
+        return Response(content=b"", status_code=400)
 
-    # 3. 转换为请求对象
+    try:
+        aes_key, req_dict = decrypt_request_and_get_key(
+            enc_aes_key, nonce, ciphertext, tag
+        )
+    except Exception:
+        return Response(content=b"", status_code=400)
+
     try:
         activation_req = ActivationRequest.from_dict(req_dict)
     except Exception as e:
-        error_response = ActivationResponse.error(f"请求格式错误: {str(e)}")
-        encrypted = encrypt_response(error_response.to_dict())
-        return Response(content=encrypted, media_type="application/octet-stream")
+        error_resp = ActivationResponse.error(f"请求格式错误: {str(e)}")
+        encrypted_error = encrypt_response_with_aes(error_resp.to_dict(), aes_key)
+        return Response(content=encrypted_error, media_type="application/octet-stream")
 
-    # 4. 校验激活码格式
+    # 校验激活码格式
     if not Utils.validate_activation_code(activation_req.activation_code):
-        error_response = ActivationResponse.error("激活码格式无效")
-        encrypted = encrypt_response(error_response.to_dict())
-        return Response(content=encrypted, media_type="application/octet-stream")
+        error_resp = ActivationResponse.error("激活码格式无效")
+        encrypted_error = encrypt_response_with_aes(error_resp.to_dict(), aes_key)
+        return Response(content=encrypted_error, media_type="application/octet-stream")
 
-    # 5. 校验时间戳
+    # 校验时间戳
     if not validate_timestamp(activation_req.timestamp):
-        error_response = ActivationResponse.error("请求时间戳无效，请同步时间")
-        encrypted = encrypt_response(error_response.to_dict())
-        return Response(content=encrypted, media_type="application/octet-stream")
+        error_resp = ActivationResponse.error("请求时间戳无效，请同步时间")
+        encrypted_error = encrypt_response_with_aes(error_resp.to_dict(), aes_key)
+        return Response(content=encrypted_error, media_type="application/octet-stream")
 
-    # 6. 防重放检查
+    # 防重放检查
     if check_replay(activation_req.activation_code, activation_req.nonce):
-        error_response = ActivationResponse.error("请求已被使用，请勿重复发送")
-        encrypted = encrypt_response(error_response.to_dict())
-        return Response(content=encrypted, media_type="application/octet-stream")
+        error_resp = ActivationResponse.error("请求已被使用，请勿重复发送")
+        encrypted_error = encrypt_response_with_aes(error_resp.to_dict(), aes_key)
+        return Response(content=encrypted_error, media_type="application/octet-stream")
 
-    # 7. 查询数据库获取激活码记录
+    # 查询数据库
     activation_record = _storage.get_by_code(activation_req.activation_code)
     if activation_record is None:
-        error_response = ActivationResponse.error("激活码不存在")
-        encrypted = encrypt_response(error_response.to_dict())
-        return Response(content=encrypted, media_type="application/octet-stream")
+        error_resp = ActivationResponse.error("激活码不存在")
+        encrypted_error = encrypt_response_with_aes(error_resp.to_dict(), aes_key)
+        return Response(content=encrypted_error, media_type="application/octet-stream")
 
-    # 8. 检查激活码是否已被使用
+    # 检查状态
     if activation_record.status == ActivationStatus.USED:
-        # 如果已被使用，检查是否同一机器
         if activation_record.bound_machine_code == activation_req.machine_code:
-            # 同一机器，直接返回成功（已激活）
-            # 注意：使用客户端发送的 nonce 作为响应 nonce，防止重放攻击
-            success_response = ActivationResponse.success(
+            # 同一机器，返回成功
+            success_resp = ActivationResponse.success(
                 authorized_until=(
                     activation_record.expires_at.strftime("%Y-%m-%d")
                     if activation_record.expires_at
                     else "永久"
                 ),
                 features=activation_record.features,
-                nonce=activation_req.nonce,  # 关键修改：返回客户端的 nonce
+                nonce=activation_req.nonce,
             )
-            encrypted_response = encrypt_response(success_response.to_dict())
+            encrypted_resp = encrypt_response_with_aes(success_resp.to_dict(), aes_key)
             return Response(
-                content=encrypted_response, media_type="application/octet-stream"
+                content=encrypted_resp, media_type="application/octet-stream"
             )
         else:
-            # 不同机器，返回已被使用错误
-            error_response = ActivationResponse.error("激活码已被其他设备使用")
-            encrypted = encrypt_response(error_response.to_dict())
-            return Response(content=encrypted, media_type="application/octet-stream")
+            error_resp = ActivationResponse.error("激活码已被其他设备使用")
+            encrypted_error = encrypt_response_with_aes(error_resp.to_dict(), aes_key)
+            return Response(
+                content=encrypted_error, media_type="application/octet-stream"
+            )
 
-    # 9. 检查是否过期
+    # 检查过期
     if activation_record.expires_at and activation_record.expires_at < datetime.now():
-        error_response = ActivationResponse.error("激活码已过期")
-        encrypted = encrypt_response(error_response.to_dict())
-        return Response(content=encrypted, media_type="application/octet-stream")
+        error_resp = ActivationResponse.error("激活码已过期")
+        encrypted_error = encrypt_response_with_aes(error_resp.to_dict(), aes_key)
+        return Response(content=encrypted_error, media_type="application/octet-stream")
 
-    # 10. 更新激活码：绑定机器码、激活时间、状态
+    # 绑定机器码
     try:
         _storage.bind_machine_code(
             activation_req.activation_code, activation_req.machine_code, datetime.now()
         )
     except Exception as e:
-        error_response = ActivationResponse.error(f"数据库更新失败: {str(e)}")
-        encrypted = encrypt_response(error_response.to_dict())
-        return Response(content=encrypted, media_type="application/octet-stream")
+        error_resp = ActivationResponse.error(f"数据库更新失败: {str(e)}")
+        encrypted_error = encrypt_response_with_aes(error_resp.to_dict(), aes_key)
+        return Response(content=encrypted_error, media_type="application/octet-stream")
 
-    # 11. 构造成功响应（使用客户端的 nonce）
-    success_response = ActivationResponse.success(
+    # 成功响应
+    success_resp = ActivationResponse.success(
         authorized_until=(
             activation_record.expires_at.strftime("%Y-%m-%d")
             if activation_record.expires_at
             else "永久"
         ),
         features=activation_record.features,
-        nonce=activation_req.nonce,  # 关键修改：返回客户端的 nonce
+        nonce=activation_req.nonce,
     )
-
-    # 12. 加密响应
-    try:
-        encrypted_response = encrypt_response(success_response.to_dict())
-    except ValueError as e:
-        error_response = ActivationResponse.error(f"加密响应失败: {str(e)}")
-        encrypted_response = encrypt_response(error_response.to_dict())
-
-    # 13. 返回成功响应
-    return Response(content=encrypted_response, media_type="application/octet-stream")
+    encrypted_resp = encrypt_response_with_aes(success_resp.to_dict(), aes_key)
+    return Response(content=encrypted_resp, media_type="application/octet-stream")

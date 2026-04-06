@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sealium"
-version = "1.0.4"
-description = "Sealium is a state-of-the-art Python library for secure licensing and activation management."
+version = "1.0.5"
+description = "Secure license key generation, software activation, and hardware binding."
 readme = "README.md"
 license = "GPL-3.0-or-later"
 authors = [{ name = "Kevin Hsu" }]

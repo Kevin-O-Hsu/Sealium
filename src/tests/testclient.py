@@ -22,10 +22,8 @@ from sealium.server.database import SQLiteDatabase, ActivationCodeStorage
 DATABASE_PATH = Path("I:/Programming/Sealium/data/database.db")
 SERVER_URL = "http://localhost:8000/v1/activation"
 
-# 服务端公钥路径
+# 服务端公钥路径（客户端只需要这个）
 SERVER_PUBLIC_KEY_PATH = Path("I:/Programming/Sealium/data/server_public.pem")
-# 客户端私钥路径
-CLIENT_PRIVATE_KEY_PATH = Path("I:/Programming/Sealium/data/client_private.pem")
 
 
 # ==================== 辅助函数 ====================
@@ -34,14 +32,6 @@ def load_server_public_key() -> str:
     if not SERVER_PUBLIC_KEY_PATH.exists():
         raise FileNotFoundError(f"服务端公钥文件不存在: {SERVER_PUBLIC_KEY_PATH}")
     with open(SERVER_PUBLIC_KEY_PATH, "r") as f:
-        return f.read()
-
-
-def load_client_private_key() -> str:
-    """加载客户端私钥"""
-    if not CLIENT_PRIVATE_KEY_PATH.exists():
-        raise FileNotFoundError(f"客户端私钥文件不存在: {CLIENT_PRIVATE_KEY_PATH}")
-    with open(CLIENT_PRIVATE_KEY_PATH, "r") as f:
         return f.read()
 
 
@@ -80,16 +70,15 @@ def main():
     test_code = unused[0].activation_code
     print(f"📋 使用激活码: {test_code}")
 
-    # 3. 创建客户端激活器（需要传入服务端公钥和客户端私钥）
+    # 3. 创建客户端激活器（只需要服务端公钥）
     try:
         server_pub_key = load_server_public_key()
-        client_priv_key = load_client_private_key()
     except Exception as e:
-        print(f"❌ 加载密钥失败: {e}")
+        print(f"❌ 加载服务端公钥失败: {e}")
         db.close()
         return
 
-    activator = Activator(SERVER_URL, server_pub_key, client_priv_key)
+    activator = Activator(SERVER_URL, server_pub_key)  # 不再需要客户端私钥
 
     # 4. 执行激活
     print("🔄 正在激活...")

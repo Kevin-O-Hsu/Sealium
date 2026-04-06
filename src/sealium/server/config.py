@@ -24,17 +24,10 @@ class ServerConfig:
     )
 
     # ==================== 密钥配置 ====================
-    # 服务端私钥路径
+    # 服务端私钥路径（必须存在）
     SERVER_PRIVATE_KEY_PATH: Path = Path(
         os.environ.get(
             "SERVER_PRIVATE_KEY_PATH", PROJECT_ROOT / "data" / "server_private.pem"
-        )
-    )
-
-    # 客户端公钥路径
-    CLIENT_PUBLIC_KEY_PATH: Path = Path(
-        os.environ.get(
-            "CLIENT_PUBLIC_KEY_PATH", PROJECT_ROOT / "data" / "client_public.pem"
         )
     )
 
@@ -59,30 +52,17 @@ class ServerConfig:
     REPLAY_CACHE_SIZE: int = int(os.environ.get("REPLAY_CACHE_SIZE", 10000))
 
     # ==================== 服务器配置 ====================
-    # 服务器主机
     HOST: str = os.environ.get("HOST", "0.0.0.0")
-
-    # 服务器端口
     PORT: int = int(os.environ.get("PORT", 8000))
-
-    # 调试模式
     DEBUG: bool = os.environ.get("DEBUG", "False").lower() == "true"
-
-    # CORS 允许的来源
     CORS_ORIGINS: list = os.environ.get("CORS_ORIGINS", "*").split(",")
 
     # ==================== API 配置 ====================
-    # API 前缀
     API_PREFIX: str = os.environ.get("API_PREFIX", "/v1")
-
-    # 激活接口路径
     ACTIVATION_PATH: str = os.environ.get("ACTIVATION_PATH", "/activation")
 
     # ==================== 日志配置 ====================
-    # 日志级别
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
-
-    # 日志格式
     LOG_FORMAT: str = os.environ.get(
         "LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
@@ -90,25 +70,16 @@ class ServerConfig:
     @classmethod
     def ensure_directories(cls):
         """确保必要的目录存在"""
-        # 确保数据目录存在
         cls.DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-        # 确保证书目录存在
         cls.SERVER_PRIVATE_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        cls.CLIENT_PUBLIC_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # 不再需要客户端公钥目录
 
     @classmethod
     def validate(cls):
         """验证配置的有效性"""
         errors = []
-
-        # 检查必要的密钥文件是否存在
         if not cls.SERVER_PRIVATE_KEY_PATH.exists():
             errors.append(f"服务端私钥文件不存在: {cls.SERVER_PRIVATE_KEY_PATH}")
-
-        if not cls.CLIENT_PUBLIC_KEY_PATH.exists():
-            errors.append(f"客户端公钥文件不存在: {cls.CLIENT_PUBLIC_KEY_PATH}")
-
         if errors:
             raise RuntimeError(f"配置验证失败:\n" + "\n".join(errors))
 
@@ -119,12 +90,10 @@ class ServerConfig:
         print("服务端配置:")
         print(f"  数据库路径: {cls.DATABASE_PATH}")
         print(f"  服务端私钥: {cls.SERVER_PRIVATE_KEY_PATH}")
-        print(f"  客户端公钥: {cls.CLIENT_PUBLIC_KEY_PATH}")
         print(f"  时间戳偏差: {cls.TIME_STAMP_TOLERANCE_SECONDS}秒")
         print(f"  服务器地址: {cls.HOST}:{cls.PORT}")
         print(f"  调试模式: {cls.DEBUG}")
         print("=" * 50)
 
 
-# 创建全局配置实例（便于导入）
 config = ServerConfig()

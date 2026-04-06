@@ -4,7 +4,7 @@
 测试前需要：
 1. 服务端已启动（uvicorn sealium.server.app:app --reload）
 2. 数据库文件存在
-3. 密钥文件存在
+3. 密钥文件存在（仅服务端公钥）
 """
 
 import sys
@@ -43,15 +43,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]  # 从 tests/ 到项目根目
 # 使用主数据库（服务端实际使用的数据库）
 DATABASE_PATH = config.DATABASE_PATH
 
-# 密钥文件路径（优先从 data 目录读取，与数据库同目录）
+# 服务端公钥路径（客户端只需要这个）
 SERVER_PUBLIC_KEY_PATH = PROJECT_ROOT / "data" / "server_public.pem"
-CLIENT_PRIVATE_KEY_PATH = PROJECT_ROOT / "data" / "client_private.pem"
 
 # 如果 data 目录下不存在，尝试 certs 目录（兼容旧结构）
 if not SERVER_PUBLIC_KEY_PATH.exists():
     SERVER_PUBLIC_KEY_PATH = PROJECT_ROOT / "certs" / "server_public.pem"
-if not CLIENT_PRIVATE_KEY_PATH.exists():
-    CLIENT_PRIVATE_KEY_PATH = PROJECT_ROOT / "certs" / "client_private.pem"
 
 
 # ==================== Fixtures ====================
@@ -76,24 +73,18 @@ def storage():
 
 
 @pytest.fixture
-def client_keys():
-    """加载客户端密钥"""
+def server_public_key():
+    """加载服务端公钥"""
     if not SERVER_PUBLIC_KEY_PATH.exists():
         pytest.skip(f"服务端公钥文件不存在: {SERVER_PUBLIC_KEY_PATH}")
-    if not CLIENT_PRIVATE_KEY_PATH.exists():
-        pytest.skip(f"客户端私钥文件不存在: {CLIENT_PRIVATE_KEY_PATH}")
     with open(SERVER_PUBLIC_KEY_PATH, "r") as f:
-        server_pub_key = f.read()
-    with open(CLIENT_PRIVATE_KEY_PATH, "r") as f:
-        client_priv_key = f.read()
-    return server_pub_key, client_priv_key
+        return f.read()
 
 
 @pytest.fixture
-def activator(client_keys):
-    """创建激活器实例"""
-    server_pub_key, client_priv_key = client_keys
-    return Activator(ACTIVATION_URL, server_pub_key, client_priv_key)
+def activator(server_public_key):
+    """创建激活器实例（只需服务端公钥）"""
+    return Activator(ACTIVATION_URL, server_public_key)
 
 
 @pytest.fixture
@@ -226,11 +217,15 @@ class TestExceptionScenarios:
     def test_database_connection_failure(self):
         pytest.skip("需要在服务端单元测试中模拟数据库失败")
 
-    def test_corrupted_private_key(self, client_keys):
-        server_pub_key, _ = client_keys
-        with pytest.raises(ValueError) as exc:
-            Activator(ACTIVATION_URL, server_pub_key, "invalid key")
-        assert "PEM" in str(exc.value) or "load" in str(exc.value)
+    def test_corrupted_server_public_key(self):
+        """测试使用无效的服务端公钥"""
+        with pytest.raises(Exception) as exc:
+            Activator(ACTIVATION_URL, "invalid public key")
+        assert (
+            "PEM" in str(exc.value)
+            or "load" in str(exc.value)
+            or "公钥" in str(exc.value)
+        )
 
     def test_server_returns_malformed_response(
         self, activator, clean_unused_activation_code, monkeypatch
@@ -261,10 +256,16 @@ class TestExceptionScenarios:
         assert "解密响应失败" in str(exc.value)
 
     def test_encryption_payload_overflow(self, activator, monkeypatch):
-        def mock_encrypt(*args, **kwargs):
+        """测试加密请求时数据过长（新版中 AES 密钥固定长度，不会溢出，但保留测试模拟异常）"""
+
+        def mock_build_encrypted_request(*args, **kwargs):
             raise ValueError("Data too long")
 
-        monkeypatch.setattr(activator.key_manager, "encrypt_request", mock_encrypt)
+        monkeypatch.setattr(
+            activator.key_manager,
+            "build_encrypted_request",
+            mock_build_encrypted_request,
+        )
         with pytest.raises(ActivationError) as exc:
             activator.activate("any_code")
         assert "加密请求失败" in str(exc.value)
