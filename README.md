@@ -20,12 +20,13 @@
 
 | Feature | Description |
 |---------|-------------|
-| 🔐 **RSA-4096 Encryption** | Secure client-server communication |
-| 🎫 **License Keys** | Cryptographically secure random keys |
-| 💻 **Hardware Binding** | Bind licenses to specific machines |
+| 🔐 **Hybrid Encryption** | RSA-4096-OAEP key wrapping + AES-256-GCM payload |
+| 🎫 **License Keys** | Cryptographically secure random keys (128-bit) |
+| 💻 **Hardware Binding** | Bind licenses to specific machines (SHA-256 fingerprint) |
 | ⏰ **Expiration Control** | Set expiry dates and feature flags |
-| 🛡️ **Anti-Replay** | Nonce-based replay attack prevention |
+| 🛡️ **Anti-Replay** | Timestamp window + nonce deduplication |
 | 🌐 **Client-Server** | Ready-to-use FastAPI backend |
+| 🔁 **Idempotent** | Same machine may reactivate safely |
 
 ---
 
@@ -42,27 +43,61 @@ pip install sealium
 ```python
 from sealium.client.activator import Activator
 
-# Activate a license
+# Client only needs the server's PUBLIC key.
 activator = Activator(
     server_url="http://localhost:8000/v1/activation",
     server_public_key_pem=open("data/server_public.pem").read(),
-    client_private_key_pem=open("data/client_private.pem").read()
 )
 
 response = activator.activate("your-license-key")
 
 if response.result == "success":
     print(f"✅ Activated until {response.authorized_until}")
+    print(f"   Features: {response.features}")
 else:
     print(f"❌ {response.error_msg}")
 ```
 
 ---
 
+## 🧱 Architecture
+
+```
+src/sealium/
+├── common/        # Shared primitives (crypto, models, machine_code, time_source)
+├── client/        # Activator + hybrid-encryption key manager
+├── server/        # FastAPI app factory, routes, services, database, config
+│   ├── routes/    # Thin HTTP layer
+│   ├── services/  # activation_service, replay_guard (pure, injectable)
+│   └── ...
+└── scripts/       # generate_keys, generate_activation_codes
+```
+
+Key principle: **no import side effects**. Importing the package performs no I/O,
+no network calls, no hardware reads. Server resources (private key, DB) are
+initialized in the FastAPI lifespan and are injectable for testing.
+
+See `src/docs/mechanism.md` for the full protocol specification.
+
+---
+
 ## 🔧 Requirements
 
 - Python 3.13+
-- cryptography, requests, fastapi, uvicorn, sqlalchemy
+- cryptography, requests, fastapi, uvicorn (wmi on Windows only)
+
+---
+
+## 🧪 Testing
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+The test suite runs fully offline: the FastAPI server is driven in-process via
+`TestClient`, the database is a throwaway SQLite file, and the timestamp source
+is injected — no live server or network required.
 
 ---
 

@@ -221,6 +221,7 @@ __marimo__/
 # Sealium 项目特定（运行时数据与密钥，不应入库）
 /data/
 /certs/
+.idea/
 *.pem
 *.key
 *.db
