@@ -9,4 +9,25 @@ description = "Secure license key generation, software activation, and hardware 
 readme = "README.md"
 license = "GPL-3.0-or-later"
 authors = [{ name = "Kevin Hsu" }]
-dependencies = ["cryptography", "requests", "fastapi", "uvicorn", "wmi"]
+requires-python = ">=3.13"
+dependencies = [
+    "cryptography",
+    "requests",
+    "fastapi",
+    "uvicorn",
+    "wmi; platform_system == 'Windows'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "httpx",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra"

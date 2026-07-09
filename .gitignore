@@ -217,3 +217,11 @@ __marimo__/
 
 .data/
 .dist/
+
+# Sealium 项目特定（运行时数据与密钥，不应入库）
+/data/
+/certs/
+*.pem
+*.key
+*.db
+*.sqlite3

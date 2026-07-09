@@ -1,97 +1,151 @@
 # src/sealium/server/app.py
 """
-FastAPI 应用入口
-创建应用实例，配置中间件，挂载路由
+FastAPI 应用工厂。
+
+``create_app`` 只组装路由、中间件并定义生命周期，**不在导入时执行任何 I/O**
+（不读私钥、不连数据库）——资源在 lifespan 启动时才初始化并挂到 ``app.state``。
+因此 ``import sealium.server.app`` 零副作用；所有运行时依赖均可注入，便于测试。
 """
 
+from __future__ import annotations
+
+import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import Callable, Optional
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import logging
 
-from .activation import router as activation_router
-from .config import config
+from sealium import __version__
+from sealium.common.crypto import RSAEncryptor
+from sealium.common.exceptions import ConfigError
+from sealium.server.activation_service import ActivationService
+from sealium.server.config import ServerConfig, config as default_config
+from sealium.server.database import ActivationCodeStorage, SQLiteDatabase
+from sealium.server.replay_guard import ReplayGuard
+from sealium.server.routes.activation import create_router
 
-# ==================== 日志配置 ====================
-logging.basicConfig(level=getattr(logging, config.LOG_LEVEL), format=config.LOG_FORMAT)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("sealium.server")
 
 
-# ==================== 生命周期管理 ====================
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def _load_server_encryptor(cfg: ServerConfig) -> RSAEncryptor:
+    """从文件加载服务端私钥。"""
+    if not cfg.server_private_key_path.exists():
+        raise ConfigError(f"服务端私钥文件不存在: {cfg.server_private_key_path}")
+    with open(cfg.server_private_key_path, "rb") as f:
+        return RSAEncryptor.from_private_key_pem(f.read())
+
+
+def _open_storage(cfg: ServerConfig) -> tuple[SQLiteDatabase, ActivationCodeStorage]:
+    """打开数据库并初始化表结构，返回 (db, storage)。"""
+    db = SQLiteDatabase(cfg.database_path)
+    db.connect()
+    db.init_tables()
+    return db, ActivationCodeStorage(db)
+
+
+def create_app(
+    config: Optional[ServerConfig] = None,
+    *,
+    encryptor: Optional[RSAEncryptor] = None,
+    storage: Optional[ActivationCodeStorage] = None,
+    replay_guard: Optional[ReplayGuard] = None,
+    now_provider: Optional[Callable[[], datetime]] = None,
+) -> FastAPI:
     """
-    应用生命周期管理
-    启动时执行初始化，关闭时执行清理
+    创建 FastAPI 应用。
+
+    所有运行时依赖（加密器、存储、防重放、时间）均可注入；为 ``None`` 时从
+    配置加载真实资源（私钥文件、SQLite）。测试时注入临时依赖即可完全离线运行。
     """
-    # 启动时执行
-    logger.info("启动 Sealium 激活服务...")
+    cfg = config or default_config
 
-    # 确保目录存在
-    config.ensure_directories()
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        logging.basicConfig(
+            level=getattr(logging, cfg.log_level.upper(), logging.INFO),
+            format=cfg.log_format,
+        )
+        logger.info("启动 Sealium 激活服务...")
+        cfg.ensure_directories()
+        # 真实资源模式才校验私钥文件；注入加密器时跳过文件校验
+        if encryptor is None:
+            cfg.validate()
+        server_encryptor = encryptor or _load_server_encryptor(cfg)
 
-    # 验证配置
-    try:
-        config.validate()
-        logger.info("配置验证通过")
-    except Exception as e:
-        logger.error(f"配置验证失败: {e}")
-        raise
+        own_db = storage is None
+        db_handle: Optional[SQLiteDatabase] = None
+        if storage is not None:
+            activation_storage = storage
+        else:
+            db_handle, activation_storage = _open_storage(cfg)
 
-    # 打印配置（调试模式）
-    if config.DEBUG:
-        config.display()
+        app.state.config = cfg
+        app.state.server_encryptor = server_encryptor
+        app.state.activation_service = ActivationService(
+            activation_storage,
+            replay_guard if replay_guard is not None else ReplayGuard(max_size=cfg.replay_cache_size),
+            cfg.timestamp_tolerance_seconds,
+            now_provider=now_provider,
+        )
 
-    yield  # 应用运行期间
+        if cfg.debug:
+            cfg.display()
 
-    # 关闭时执行
-    logger.info("关闭 Sealium 激活服务...")
+        try:
+            yield
+        finally:
+            if own_db and db_handle is not None:
+                db_handle.close()
+            logger.info("关闭 Sealium 激活服务...")
+
+    app = FastAPI(
+        title="Sealium Activation Server",
+        version=__version__,
+        description="在线激活验证模块服务端",
+        lifespan=lifespan,
+        debug=cfg.debug,
+    )
+    app.state.config = cfg
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cfg.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.include_router(create_router(cfg.activation_path), prefix=cfg.api_prefix)
+
+    @app.get("/health", tags=["health"])
+    async def health_check() -> dict:
+        """健康检查端点。"""
+        return {"status": "ok", "service": "activation"}
+
+    if cfg.debug:
+
+        @app.get("/debug/config", tags=["debug"])
+        async def debug_config() -> dict:
+            """查看当前配置（仅调试模式）。"""
+            return {
+                "database_path": str(cfg.database_path),
+                "server_private_key": str(cfg.server_private_key_path),
+                "server_public_key": (
+                    str(cfg.server_public_key_path) if cfg.server_public_key_path else None
+                ),
+                "time_stamp_tolerance": cfg.timestamp_tolerance_seconds,
+                "replay_cache_size": cfg.replay_cache_size,
+                "host": cfg.host,
+                "port": cfg.port,
+                "debug": cfg.debug,
+                "api_prefix": cfg.api_prefix,
+                "activation_path": cfg.activation_path,
+            }
+
+    return app
 
 
-# ==================== 创建 FastAPI 应用 ====================
-app = FastAPI(
-    title="Sealium Activation Server",
-    version="1.0.0",
-    description="在线激活验证模块服务端",
-    lifespan=lifespan,
-    debug=config.DEBUG,
-)
-
-# ==================== CORS 中间件 ====================
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=config.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ==================== 路由挂载 ====================
-app.include_router(activation_router)
-
-
-# ==================== 健康检查接口 ====================
-@app.get("/health", tags=["health"])
-async def health_check():
-    """健康检查端点"""
-    return {"status": "ok", "service": "activation"}
-
-
-# ==================== 配置信息接口（仅调试模式） ====================
-if config.DEBUG:
-
-    @app.get("/debug/config", tags=["debug"])
-    async def debug_config():
-        """查看当前配置（仅调试模式）"""
-        return {
-            "database_path": str(config.DATABASE_PATH),
-            "server_private_key": str(config.SERVER_PRIVATE_KEY_PATH),
-            "client_public_key": str(config.CLIENT_PUBLIC_KEY_PATH),
-            "time_stamp_tolerance": config.TIME_STAMP_TOLERANCE_SECONDS,
-            "replay_cache_size": config.REPLAY_CACHE_SIZE,
-            "host": config.HOST,
-            "port": config.PORT,
-            "debug": config.DEBUG,
-            "api_prefix": config.API_PREFIX,
-            "activation_path": config.ACTIVATION_PATH,
-        }
+# 默认应用实例，供 ``uvicorn sealium.server.app:app`` 使用。
+# create_app 仅组装路由 / 中间件、定义 lifespan，不执行任何 I/O，导入零副作用。
+app = create_app()
