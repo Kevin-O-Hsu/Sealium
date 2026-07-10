@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/sealium/"><img src="https://img.shields.io/pypi/v/sealium?style=flat-square&logo=pypi&color=2c8cff" alt="PyPI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-2c8cff?style=flat-square" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2c8cff?style=flat-square" alt="License"></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.13+-2c8cff?style=flat-square&logo=python" alt="Python"></a>
 </p>
 
@@ -123,7 +123,7 @@ the public network:
 
 ## 📄 License
 
-GPLv3 © Sealium Contributors
+MIT © 2026 Kevin Orson Hsu
 
 ---
 
