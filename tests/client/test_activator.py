@@ -39,12 +39,34 @@ def test_timestamp_provider_failure(server_public_pem):
     def no_time():
         raise RuntimeError("no time")
 
+    # 注入固定机器码，使本测试只聚焦"时间戳提供者失败"路径，与平台无关
+    # （否则默认 WMI 采集在非 Windows 上会先抛错，掩盖被测路径）。
     activator = Activator(
-        "http://localhost/v1/activation", server_public_pem, timestamp_provider=no_time
+        "http://localhost/v1/activation",
+        server_public_pem,
+        timestamp_provider=no_time,
+        machine_code_provider=lambda: "m",
     )
     with pytest.raises(ActivationError) as exc:
         activator.activate("any")
     assert "时间戳" in str(exc.value)
+
+
+def test_machine_code_provider_failure(server_public_pem):
+    """机器码提供者抛异常时，activate() 应收敛为 ActivationError（契约一致性）。"""
+
+    def no_machine():
+        raise RuntimeError("no hardware")
+
+    activator = Activator(
+        "http://localhost/v1/activation",
+        server_public_pem,
+        timestamp_provider=lambda: 1700000000,
+        machine_code_provider=no_machine,
+    )
+    with pytest.raises(ActivationError) as exc:
+        activator.activate("any")
+    assert "机器码" in str(exc.value)
 
 
 def test_encrypt_request_failure(client, make_activator, unused_code, monkeypatch):

@@ -70,7 +70,10 @@ class Activator:
         :raises ActivationError: 激活过程中发生错误。
         """
         # 1. 获取机器码
-        machine_code = self._get_machine_code()
+        try:
+            machine_code = self._get_machine_code()
+        except Exception as e:
+            raise ActivationError(f"获取机器码失败: {e}") from e
 
         # 2. 生成随机 nonce（16 字节 -> 32 个十六进制字符）
         nonce_c = secrets.token_hex(16)
