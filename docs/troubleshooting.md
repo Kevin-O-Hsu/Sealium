@@ -40,7 +40,7 @@
 换了主板（连带 BIOS + 系统 UUID）会让核心类失 3 个 → 判异机。
 
 - 若属于合理硬件更换，需在服务端**重置该激活码**（删库记录或重新生成）让用户重新激活。
-- 若想更宽松（换少量核心硬件仍认同一台），调 `MACHINE_ID_CORE_MIN` / `MACHINE_ID_THRESHOLD`
+- 若想更宽松（换少量核心硬件仍认同一台），在 `sealium.toml` 调 `[machine_id] core_min` / `threshold`
   （见 [配置参考](configuration.md)）——注意这会降低防破解强度。
 
 ### spoof_score 偏高 / 采集异常
@@ -86,7 +86,7 @@ print("spoof_score:", fp.spoof_score)
 
 ## 时间同步
 
-时间戳偏差超 `TIME_STAMP_TOLERANCE_SECONDS`（默认 300s）即拒。
+时间戳偏差超 `[security] timestamp_tolerance_seconds`（默认 300s）即拒。
 
 - 客户端时间戳取自 `https://aisenseapi.com/services/v1/timestamp`，**非本地时钟**。
 - 若该 API 在你的网络环境不可达，激活会失败（`获取时间戳失败`）。可注入自定义
@@ -98,7 +98,7 @@ print("spoof_score:", fp.spoof_score)
 HTTP 429, Retry-After: 60
 ```
 
-每 IP 在 `RATE_LIMIT_WINDOW_SECONDS`（默认 60s）内超过 `RATE_LIMIT_MAX_REQUESTS`（默认 60 次）。
+每 IP 在 `[rate_limit] window_seconds`（默认 60s）内超过 `[rate_limit] max_requests`（默认 60 次）。
 正常激活不会触发；若客户端有"启动即重试"逻辑，可能误触——加退避或调大限额。
 
 ## 服务端排查
@@ -107,8 +107,10 @@ HTTP 429, Retry-After: 60
 # 健康检查
 curl https://activation.example.com/health
 
-# 看配置（仅 DEBUG=true）
+# 看配置（仅 [server] debug = true；脱敏，私钥口令以 <set>/<unset> 表示）
 curl https://activation.example.com/debug/config
+# 无需启动服务也能查看 / 校验配置：
+python -m sealium.server.config_cli show|check
 
 # 查某激活码状态（直接查库）
 sqlite3 data/database.db "SELECT code, status, activated_at, expires_at FROM activation_codes WHERE code='<CODE>';"

@@ -227,6 +227,10 @@ __marimo__/
 *.db
 *.sqlite3
 
+# 本地配置文件（敏感，不应入库；保留 .example 模板）
+sealium.toml
+.env
+
 # 安全审计产物（本地分析报告，不应入库）
 security-audit-report.md
 security-audit-report.pdf

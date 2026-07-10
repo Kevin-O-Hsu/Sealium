@@ -46,7 +46,7 @@ Quick pointers:
 - [硬件绑定原理](docs/hardware-binding.md) — fingerprint generation, cross-validation, matching algorithm (**1.3.0 redesign**)
 - [服务端部署指南](docs/server-guide.md) — install, keys, code generation, reverse proxy/TLS, multi-worker
 - [客户端集成指南](docs/client-guide.md) — embedding activation in your application
-- [配置参考](docs/configuration.md) — every environment variable and default
+- [配置参考](docs/configuration.md) — TOML schema & environment variable overrides
 - [安全模型](docs/security.md) — threat model, mitigations, known limitations
 - [故障排查](docs/troubleshooting.md) — error codes and diagnostics
 
@@ -113,16 +113,21 @@ See [docs/architecture.md](docs/architecture.md) for the full design.
 ```bash
 pip install sealium
 
-# 1. Generate the server RSA keypair (keep private key on the server only)
+# 1. (optional) Configure: copy the template and edit (zero-config works too)
+cp sealium.toml.example sealium.toml
+
+# 2. Generate the server RSA keypair (keep private key on the server only)
 python -m sealium.scripts.generate_keys
 
-# 2. Generate activation codes into the database
+# 3. Generate activation codes into the database
 python -m sealium.scripts.generate_activation_codes --count 10 --features pro
 
-# 3. Run the activation service (behind a reverse proxy in production)
+# 4. Run the activation service (behind a reverse proxy in production)
 python -m sealium.server.run
 ```
 
+Configuration is driven by `sealium.toml` (structured, commentable) + `SEALIUM_*` env vars /
+`.env` (secrets & overrides). Validate with `python -m sealium.server.config_cli check`.
 Distribute `data/server_public.pem` with your client. Full guide: [docs/server-guide.md](docs/server-guide.md).
 
 ---
@@ -153,11 +158,13 @@ timestamp source are injected — no live server, network, or real hardware requ
 Sealium is designed to run **behind a reverse proxy / firewall**, not exposed bare to
 the public network:
 
-- **Bind address** — defaults to `0.0.0.0`; restrict via `HOST=127.0.0.1` when running
-  co-located with the proxy.
+- **Bind address** — defaults to `0.0.0.0`; restrict via `[server] host = "127.0.0.1"` in
+  `sealium.toml` (or `SEALIUM_SERVER__HOST`) when running co-located with the proxy.
 - **TLS** — terminate TLS at the reverse proxy (with HSTS) to hide metadata.
-- **Rate limiting** — enabled by default (`RATE_LIMIT_ENABLED`, 60 req / 60 s per IP).
-- **Docs** — `/docs`, `/redoc`, `/openapi.json` are auto-disabled when `DEBUG=false`.
+- **Rate limiting** — enabled by default (`[rate_limit]`, 60 req / 60 s per IP).
+- **Docs** — `/docs`, `/redoc`, `/openapi.json` are auto-disabled when `[server] debug = false`.
+- **Config** — `sealium.toml` + `SEALIUM_*` env / `.env`; private-key passphrase stored as
+  `SecretStr` (never echoed). Validate with `python -m sealium.server.config_cli check`.
 - **Key material** — `data/server_private.pem` and the SQLite DB are created with
   `0600` permissions; the private key can be passphrase-encrypted.
 - **Multi-worker caveat** — the in-memory replay guard and rate limiter are

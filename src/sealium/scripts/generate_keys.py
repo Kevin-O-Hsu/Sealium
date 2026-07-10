@@ -2,8 +2,8 @@
 """
 生成服务端 RSA 密钥对。
 
-默认输出到服务端配置指定的路径（``data/server_private.pem`` 与
-``data/server_public.pem``）。客户端只需分发公钥。
+默认输出到服务端配置指定的路径（``[paths] private_key`` 与同目录
+``server_public.pem``）。客户端只需分发公钥。
 """
 
 from __future__ import annotations
@@ -17,18 +17,19 @@ from cryptography.hazmat.primitives import serialization
 
 from sealium.common.constants import RSA_KEY_SIZE
 from sealium.common.crypto import RSAEncryptor
-from sealium.server.config import config
+from sealium.server.config import get_config
 
 
 def _resolve_paths(
     private_key_path: Optional[Union[str, Path]],
     public_key_path: Optional[Union[str, Path]],
 ) -> Tuple[Path, Path]:
-    priv = Path(private_key_path) if private_key_path else config.server_private_key_path
+    cfg = get_config()
+    priv = Path(private_key_path) if private_key_path else cfg.paths.private_key
     if public_key_path:
         pub = Path(public_key_path)
-    elif config.server_public_key_path is not None:
-        pub = config.server_public_key_path
+    elif cfg.paths.public_key is not None:
+        pub = cfg.paths.public_key
     else:
         pub = priv.parent / "server_public.pem"
     return priv, pub
@@ -44,7 +45,8 @@ def generate_key_pair(
     生成 RSA 密钥对并写入文件。
 
     :param passphrase: 非空时私钥以该口令加密落盘（LOW-001），启动时通过
-                       ``SERVER_PRIVATE_KEY_PASSPHRASE`` 环境变量提供同名口令解密。
+                       ``SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE`` 环境变量提供
+                       同名口令解密。
     :return: (私钥路径, 公钥路径)。
     """
     priv_path, pub_path = _resolve_paths(private_key_path, public_key_path)
@@ -79,8 +81,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--passphrase",
         type=str,
-        default=os.environ.get("SERVER_PRIVATE_KEY_PASSPHRASE"),
-        help="私钥落盘口令（默认读 SERVER_PRIVATE_KEY_PASSPHRASE 环境变量）；"
+        default=os.environ.get("SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE"),
+        help="私钥落盘口令（默认读 SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE 环境变量）；"
         "未提供则私钥明文存储",
     )
     args = parser.parse_args()

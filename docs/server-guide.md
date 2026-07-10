@@ -27,11 +27,11 @@ python -m sealium.scripts.generate_keys \
 
 ```bash
 python -m sealium.scripts.generate_keys --passphrase "a-long-random-passphrase"
-# 启动时通过环境变量提供口令：
-export SERVER_PRIVATE_KEY_PASSPHRASE="a-long-random-passphrase"
+# 启动时通过环境变量（或 .env）提供同名口令：
+export SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE="a-long-random-passphrase"
 ```
 
-> 不提供 `--passphrase` 则私钥明文存储（向后兼容）。
+> 不提供 `--passphrase` 则私钥明文存储（向后兼容，不推荐用于生产）。
 
 ## 3. 生成激活码
 
@@ -54,7 +54,7 @@ python -m sealium.scripts.generate_activation_codes \
 | `--count` | 数量（默认 10） |
 | `--expires` | `YYYY-MM-DD` 或 `permanent`（默认永久） |
 | `--features` | 功能列表，逗号分隔（如 `premium,enterprise`） |
-| `--db` | 数据库路径（默认读配置 `DATABASE_PATH`） |
+| `--db` | 数据库路径（默认读配置 `[paths] database`） |
 | `--output` | 输出到文件（可选） |
 | `--no-print` | 不打印到控制台 |
 
@@ -70,17 +70,30 @@ codes = generate_activation_codes(
 )
 ```
 
-## 4. 启动服务
+## 4. 配置与启动服务
+
+Sealium 用 `sealium.toml`（结构化主配置）+ 环境变量 / `.env`（覆盖与敏感项）。
+最快上手：
 
 ```bash
-# 方式一：内置入口（参数取自配置）
+cp sealium.toml.example sealium.toml      # 按需编辑（非敏感项）
+cp .env.example .env                       # 填敏感项（如私钥口令）
+python -m sealium.server.config_cli check  # 配置自检（退出码反映健康）
+```
+
+无 `sealium.toml` 也能启动（零配置开箱即用）。全部配置项见 [配置参考](configuration.md)。
+
+```bash
+# 方式一：内置入口（参数取自配置；--config 指定配置文件）
 python -m sealium.server.run
+python -m sealium.server.run --config /etc/sealium/sealium.toml
 
 # 方式二：直接 uvicorn（更灵活，如多 worker）
 uvicorn sealium.server.app:app --host 127.0.0.1 --port 8000 --workers 4
 ```
 
-默认监听 `0.0.0.0:8000`。**设计上置于反向代理/防火墙之后**，不要裸暴露公网。
+默认监听 `0.0.0.0:8000`（生产建议在 `sealium.toml` 设 `[server] host = "127.0.0.1"`）。
+**设计上置于反向代理/防火墙之后**，不要裸暴露公网。
 
 健康检查：`GET /health` → `{"status":"ok","service":"activation"}`。
 激活接口：`POST /v1/activation`（`application/octet-stream`，见 [协议](protocol.md)）。
@@ -106,12 +119,12 @@ server {
 }
 ```
 
-并把服务端绑定到本机：`HOST=127.0.0.1`。
+并把服务端绑定到本机：在 `sealium.toml` 设 `[server] host = "127.0.0.1"`（或环境变量 `SEALIUM_SERVER__HOST=127.0.0.1`）。
 
 ## 6. 数据库
 
 - 默认 SQLite 文件 `./data/database.db`，权限 `0600`。
-- 表结构极简（见 [架构 §目录结构](architecture.md)）；切换路径用 `DATABASE_PATH`。
+- 表结构极简（见 [架构 §目录结构](architecture.md)）；切换路径用 `[paths] database`（见 [配置参考](configuration.md)）。
 - 表在首次连接时自动创建，无需手动迁移。
 - 高并发写考虑定期备份 + WAL 模式（如需）。
 
@@ -126,19 +139,24 @@ server {
 
 ## 8. 调试
 
-`DEBUG=true` 时：
+`[server] debug = true`（或 `SEALIUM_SERVER__DEBUG=true`）时：
 - 自动开启 `/docs`、`/redoc`、`/openapi.json`（生产请保持 `false`，避免泄露接口结构）。
-- `/debug/config` 可查看当前生效配置。
+- `/debug/config` 可查看当前生效配置（**脱敏**：私钥口令以 `<set>`/`<unset>` 表示）。
 - uvicorn 开启热重载。
+
+无需启动服务也能查看 / 校验配置：`python -m sealium.server.config_cli show|check`。
 
 ## 9. 版本升级
 
-升级 `sealium` 后重启服务即可。注意 **1.3.0** 硬件绑定是 breaking change（见
-[硬件绑定 §迁移](hardware-binding.md#升级与迁移)）：旧 `bound_machine_code`（整体哈希字符串）
-无法被新版本解析，需清库重建激活码。
+升级 `sealium` 后重启服务即可。注意两个 breaking change：
+
+- **1.3.0** 硬件绑定：旧 `bound_machine_code`（整体哈希字符串）无法被新版本解析，
+  需清库重建激活码（见 [硬件绑定](hardware-binding.md)）。
+- **1.4.0** 配置系统：旧的裸环境变量（`HOST`/`PORT`/`DATABASE_PATH`/…）废弃，
+  改为 `sealium.toml` + `SEALIUM_*` 环境变量（见 [配置参考 §迁移](configuration.md#从旧版迁移13x--140)）。
 
 ## 下一步
 
-- [配置参考](configuration.md)：全部环境变量。
+- [配置参考](configuration.md)：TOML schema 与环境变量覆盖。
 - [安全模型](security.md)：部署加固清单。
 - [故障排查](troubleshooting.md)：常见错误。

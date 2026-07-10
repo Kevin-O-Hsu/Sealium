@@ -28,17 +28,18 @@
 | **激活码被复制到另一台机器** | 硬件指纹绑定；不同机器核心类不匹配 → 判异机拒绝。 |
 | **spoof 工具篡改硬件序列号** | 多表面交叉验证（SMBIOS 固件表 + 磁盘 IOCTL + WMI），单层篡改即暴露；核心类占位符 → 分量缺失 → 核心门槛不过。 |
 | **日志泄漏激活码/机器码** | 审计日志只记 SHA-256 短哈希（前 12 位）。 |
-| **私钥文件被他人读取** | 落盘权限 `0600`；可加口令加密（`SERVER_PRIVATE_KEY_PASSPHRASE`）。 |
-| **暴力刷激活接口** | 默认限流 60 req/60s/IP，超限 429。 |
-| **接口结构泄露** | 生产（`DEBUG=false`）关闭 `/docs`/`/redoc`/`/openapi.json`。 |
+| **私钥文件被他人读取** | 落盘权限 `0600`；可加口令加密（`.env` `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE`，`SecretStr` 不回显明文）。 |
+| **暴力刷激活接口** | 默认限流 60 req/60s/IP（`[rate_limit]`），超限 429。 |
+| **接口结构泄露** | 生产（`[server] debug = false`）关闭 `/docs`/`/redoc`/`/openapi.json`。 |
 
 ## 最佳实践清单（生产部署）
 
-- [ ] 私钥加口令加密落盘（`SERVER_PRIVATE_KEY_PASSPHRASE`）。
+- [ ] 私钥加口令加密落盘（`.env` `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE`）。
 - [ ] 私钥文件权限 `0600`，所属用户最小权限。
-- [ ] 服务置于反向代理后，启用 TLS + HSTS；`HOST=127.0.0.1`。
-- [ ] `DEBUG=false`。
-- [ ] 限流开启并按实际调参。
+- [ ] 服务置于反向代理后，启用 TLS + HSTS；`[server] host = "127.0.0.1"`。
+- [ ] `[server] debug = false`。
+- [ ] 限流开启并按实际调参（`[rate_limit]`）。
+- [ ] 部署前跑 `python -m sealium.server.config_cli check` 自检。
 - [ ] 定期备份 SQLite（激活码是资产）。
 - [ ] 多 worker 时注入共享防重放/限流后端（Redis）。
 - [ ] 公钥随客户端分发，建立轮换机制。

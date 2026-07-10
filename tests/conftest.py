@@ -22,7 +22,15 @@ from sealium.client.activator import Activator
 from sealium.common.crypto import RSAEncryptor
 from sealium.common.fingerprint import Component, MachineFingerprint
 from sealium.server.app import create_app
-from sealium.server.config import ServerConfig
+from sealium.server.config import (
+    ServerConfig,
+    ServerModel,
+    PathsModel,
+    SecurityModel,
+    RateLimitModel,
+    LoggingModel,
+    CorsModel,
+)
 from sealium.server.database import ActivationCodeStorage, SQLiteDatabase
 
 # 固定的“当前时间”，便于时间戳/过期断言
@@ -84,23 +92,24 @@ def storage(db: SQLiteDatabase) -> ActivationCodeStorage:
 
 # ==================== 服务端应用 / TestClient ====================
 def isolated_config(base_dir: Path) -> ServerConfig:
-    """构造一个不触碰真实文件的隔离配置（指向临时目录）。"""
+    """构造一个不触碰真实文件的隔离配置（指向临时目录，bypass 文件加载）。"""
     return ServerConfig(
-        project_root=base_dir,
-        database_path=base_dir / "test.db",
-        server_private_key_path=base_dir / "server_private.pem",
-        server_public_key_path=None,
-        timestamp_tolerance_seconds=300,
-        replay_cache_size=10000,
-        host="127.0.0.1",
-        port=8000,
-        debug=False,
-        cors_origins=["*"],
-        api_prefix="/v1",
-        activation_path="/activation",
-        log_level="WARNING",
-        log_format="%(message)s",
-        rate_limit_enabled=False,  # 测试默认关闭限流，保证确定性
+        server=ServerModel(
+            host="127.0.0.1",
+            port=8000,
+            debug=False,
+            api_prefix="/v1",
+            activation_path="/activation",
+        ),
+        paths=PathsModel(
+            database=base_dir / "test.db",
+            private_key=base_dir / "server_private.pem",
+            public_key=None,
+        ),
+        security=SecurityModel(),
+        rate_limit=RateLimitModel(enabled=False),  # 测试默认关闭限流，保证确定性
+        logging=LoggingModel(level="WARNING", format="%(message)s"),
+        cors=CorsModel(),
     )
 
 

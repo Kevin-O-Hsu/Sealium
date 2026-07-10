@@ -15,7 +15,7 @@ from typing import List, Optional, Union
 
 from sealium.common.constants import ACTIVATION_CODE_BYTES
 from sealium.common.models import ActivationCode, ActivationStatus
-from sealium.server.config import config
+from sealium.server.config import get_config
 from sealium.server.database import ActivationCodeStorage, SQLiteDatabase
 
 
@@ -56,12 +56,12 @@ def generate_activation_codes(
     :param count: 生成数量。
     :param expires_at: 授权截止时间（datetime / 'YYYY-MM-DD' / 'permanent' / None=永久）。
     :param features: 功能列表，如 ["premium", "enterprise"]。
-    :param db_path: 数据库路径，默认使用服务端配置。
+    :param db_path: 数据库路径，默认读配置 ``[paths] database``。
     :return: 生成的激活码字符串列表。
     """
     if features is None:
         features = []
-    path = Path(db_path) if db_path is not None else config.database_path
+    path = Path(db_path) if db_path is not None else get_config().paths.database
     path.parent.mkdir(parents=True, exist_ok=True)
 
     expires_datetime = _parse_expires_at(expires_at)
@@ -147,7 +147,7 @@ if __name__ == "__main__":
         default="",
         help="授权功能列表，逗号分隔，例如 premium,enterprise",
     )
-    parser.add_argument("--db", type=str, help="数据库路径（默认使用配置文件中的路径）")
+    parser.add_argument("--db", type=str, help="数据库路径（默认读配置 [paths] database）")
     parser.add_argument("--output", type=str, help="输出文件路径（可选）")
     parser.add_argument("--no-print", action="store_true", help="不打印到控制台")
 

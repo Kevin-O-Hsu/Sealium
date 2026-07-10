@@ -4,7 +4,10 @@ FastAPI 应用工厂。
 
 ``create_app`` 只组装路由、中间件并定义生命周期，**不在导入时执行任何 I/O**
 （不读私钥、不连数据库）——资源在 lifespan 启动时才初始化并挂到 ``app.state``。
-因此 ``import sealium.server.app`` 零副作用；所有运行时依赖均可注入，便于测试。
+配置经 :func:`sealium.server.config.get_config` 惰性加载，因此
+``import sealium.server.config`` 零副作用；本模块的模块级 ``app`` 会在导入时触发
+一次配置加载（uvicorn 需要 app 对象，配置读取是轻量 I/O 且可 fail-fast，可接受）。
+所有运行时依赖均可注入，便于测试。
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ from sealium import __version__
 from sealium.common.crypto import RSAEncryptor
 from sealium.common.exceptions import ConfigError
 from sealium.server.activation_service import ActivationService
-from sealium.server.config import ServerConfig, config as default_config
+from sealium.server.config import ServerConfig, get_config
 from sealium.server.database import ActivationCodeStorage, SQLiteDatabase
 from sealium.server.rate_limit import InMemoryRateLimiter, NullRateLimiter, RateLimiter
 from sealium.server.replay_guard import ReplayGuard
@@ -32,20 +35,18 @@ logger = logging.getLogger("sealium.server")
 
 def _load_server_encryptor(cfg: ServerConfig) -> RSAEncryptor:
     """从文件加载服务端私钥（可选口令解密，LOW-001）。"""
-    if not cfg.server_private_key_path.exists():
-        raise ConfigError(f"服务端私钥文件不存在: {cfg.server_private_key_path}")
+    if not cfg.paths.private_key.exists():
+        raise ConfigError(f"服务端私钥文件不存在: {cfg.paths.private_key}")
     password = (
-        cfg.server_private_key_passphrase.encode("utf-8")
-        if cfg.server_private_key_passphrase
-        else None
+        cfg.passphrase_secret.encode("utf-8") if cfg.passphrase_secret else None
     )
-    with open(cfg.server_private_key_path, "rb") as f:
+    with open(cfg.paths.private_key, "rb") as f:
         return RSAEncryptor.from_private_key_pem(f.read(), password=password)
 
 
 def _open_storage(cfg: ServerConfig) -> tuple[SQLiteDatabase, ActivationCodeStorage]:
     """打开数据库并初始化表结构，返回 (db, storage)。"""
-    db = SQLiteDatabase(cfg.database_path)
+    db = SQLiteDatabase(cfg.paths.database)
     db.connect()
     db.init_tables()
     return db, ActivationCodeStorage(db)
@@ -66,13 +67,13 @@ def create_app(
     所有运行时依赖（加密器、存储、防重放、限流、时间）均可注入；为 ``None`` 时从
     配置加载真实资源（私钥文件、SQLite）。测试时注入临时依赖即可完全离线运行。
     """
-    cfg = config or default_config
+    cfg = config or get_config()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         logging.basicConfig(
-            level=getattr(logging, cfg.log_level.upper(), logging.INFO),
-            format=cfg.log_format,
+            level=getattr(logging, cfg.logging.level.upper(), logging.INFO),
+            format=cfg.logging.format,
         )
         logger.info("启动 Sealium 激活服务...")
         cfg.ensure_directories()
@@ -92,24 +93,24 @@ def create_app(
         app.state.server_encryptor = server_encryptor
         app.state.activation_service = ActivationService(
             activation_storage,
-            replay_guard if replay_guard is not None else ReplayGuard(max_size=cfg.replay_cache_size),
-            cfg.timestamp_tolerance_seconds,
+            replay_guard if replay_guard is not None else ReplayGuard(max_size=cfg.security.replay_cache_size),
+            cfg.security.timestamp_tolerance_seconds,
             now_provider=now_provider,
-            machine_id_policy=cfg.machine_id_policy,
+            machine_id_policy=cfg.machine_id_policy(),
         )
         # 限流器：注入优先；否则按配置启用进程内固定窗口限流（MEDIUM-002）
         if rate_limiter is not None:
             limiter = rate_limiter
-        elif cfg.rate_limit_enabled:
+        elif cfg.rate_limit.enabled:
             limiter = InMemoryRateLimiter(
-                cfg.rate_limit_max_requests, cfg.rate_limit_window_seconds
+                cfg.rate_limit.max_requests, cfg.rate_limit.window_seconds
             )
         else:
             limiter = NullRateLimiter()
         app.state.rate_limiter = limiter
 
-        if cfg.debug:
-            cfg.display()
+        if cfg.server.debug:
+            logger.debug("生效配置（脱敏）: %s", cfg.safe_dump())
 
         try:
             yield
@@ -123,11 +124,11 @@ def create_app(
         version=__version__,
         description="在线激活验证模块服务端",
         lifespan=lifespan,
-        debug=cfg.debug,
+        debug=cfg.server.debug,
         # 生产（debug=False）关闭自动文档，避免泄露接口结构（MEDIUM-005）
-        docs_url="/docs" if cfg.debug else None,
-        redoc_url="/redoc" if cfg.debug else None,
-        openapi_url="/openapi.json" if cfg.debug else None,
+        docs_url="/docs" if cfg.server.debug else None,
+        redoc_url="/redoc" if cfg.server.debug else None,
+        openapi_url="/openapi.json" if cfg.server.debug else None,
     )
     app.state.config = cfg
 
@@ -135,41 +136,28 @@ def create_app(
     # 关闭 allow_credentials 以避免 “* + credentials” 误配（MEDIUM-001）。
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cfg.cors_origins,
+        allow_origins=cfg.cors.origins,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.include_router(create_router(cfg.activation_path), prefix=cfg.api_prefix)
+    app.include_router(create_router(cfg.server.activation_path), prefix=cfg.server.api_prefix)
 
     @app.get("/health", tags=["health"])
     async def health_check() -> dict:
         """健康检查端点。"""
         return {"status": "ok", "service": "activation"}
 
-    if cfg.debug:
+    if cfg.server.debug:
 
         @app.get("/debug/config", tags=["debug"])
         async def debug_config() -> dict:
-            """查看当前配置（仅调试模式）。"""
-            return {
-                "database_path": str(cfg.database_path),
-                "server_private_key": str(cfg.server_private_key_path),
-                "server_public_key": (
-                    str(cfg.server_public_key_path) if cfg.server_public_key_path else None
-                ),
-                "time_stamp_tolerance": cfg.timestamp_tolerance_seconds,
-                "replay_cache_size": cfg.replay_cache_size,
-                "host": cfg.host,
-                "port": cfg.port,
-                "debug": cfg.debug,
-                "api_prefix": cfg.api_prefix,
-                "activation_path": cfg.activation_path,
-            }
+            """查看当前生效配置（脱敏；私钥口令以 <set>/<unset> 表示）。"""
+            return cfg.safe_dump()
 
     return app
 
 
 # 默认应用实例，供 ``uvicorn sealium.server.app:app`` 使用。
-# create_app 仅组装路由 / 中间件、定义 lifespan，不执行任何 I/O，导入零副作用。
+# 模块级 app 会在导入时触发一次配置加载（get_config）；重 I/O（私钥、DB）仍推迟到 lifespan。
 app = create_app()

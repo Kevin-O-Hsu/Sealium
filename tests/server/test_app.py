@@ -9,25 +9,33 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from sealium.server.app import app as default_app, create_app
-from sealium.server.config import ServerConfig
+from sealium.server.config import (
+    CorsModel,
+    LoggingModel,
+    PathsModel,
+    SecurityModel,
+    ServerConfig,
+    ServerModel,
+)
 
 
 def _config(tmp_path, debug: bool = False) -> ServerConfig:
     return ServerConfig(
-        project_root=tmp_path,
-        database_path=tmp_path / "t.db",
-        server_private_key_path=tmp_path / "p.pem",
-        server_public_key_path=None,
-        timestamp_tolerance_seconds=300,
-        replay_cache_size=10000,
-        host="127.0.0.1",
-        port=8000,
-        debug=debug,
-        cors_origins=["*"],
-        api_prefix="/v1",
-        activation_path="/activation",
-        log_level="WARNING",
-        log_format="%(message)s",
+        server=ServerModel(
+            host="127.0.0.1",
+            port=8000,
+            debug=debug,
+            api_prefix="/v1",
+            activation_path="/activation",
+        ),
+        paths=PathsModel(
+            database=tmp_path / "t.db",
+            private_key=tmp_path / "p.pem",
+            public_key=None,
+        ),
+        security=SecurityModel(),
+        logging=LoggingModel(level="WARNING", format="%(message)s"),
+        cors=CorsModel(),
     )
 
 
@@ -59,8 +67,10 @@ def test_debug_mode_exposes_debug_endpoint(server_keypair, storage, tmp_path):
         resp = test_client.get("/debug/config")
         assert resp.status_code == 200
         body = resp.json()
-        assert "database_path" in body
-        assert body["debug"] is True
+        assert body["server"]["debug"] is True
+        assert "database" in body["paths"]
+        # 脱敏：passphrase 永远不回显明文
+        assert body["security"]["private_key_passphrase"] == "<unset>"
 
 
 def test_production_mode_hides_debug_endpoint(make_app, storage):
