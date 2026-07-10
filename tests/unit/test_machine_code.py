@@ -11,6 +11,7 @@ import os
 
 import pytest
 
+from sealium.common.exceptions import SealiumError
 from sealium.common.machine_code import (
     generate_machine_code,
     hash_hardware_info,
@@ -38,10 +39,17 @@ class TestHashHardwareInfo:
         b = [("cpu", "1"), ("board", "2"), ("mac", "9")]
         assert hash_hardware_info(a) != hash_hardware_info(b)
 
-    def test_fallback_when_too_few_items(self):
-        # 少于 3 条会补充 fallback（时间）并仍生成合法码
-        code = hash_hardware_info([("cpu", "x")])
-        assert len(code) == 64
+    def test_too_few_items_fails_safe(self):
+        # 少于 3 条且无 fallback_secret -> fail-safe 抛错（不再注入时间削弱绑定）
+        with pytest.raises(SealiumError):
+            hash_hardware_info([("cpu", "x")])
+
+    def test_too_few_items_with_stable_fallback_secret(self):
+        # 提供稳定 fallback_secret 时仍生成确定性、稳定的机器码
+        code_a = hash_hardware_info([("cpu", "x")], fallback_secret="install-secret")
+        code_b = hash_hardware_info([("cpu", "x")], fallback_secret="install-secret")
+        assert len(code_a) == 64
+        assert code_a == code_b  # 稳定：同一 secret -> 同一码
 
 
 class TestGenerateMachineCode:

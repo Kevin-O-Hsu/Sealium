@@ -66,7 +66,8 @@ class TestFullActivationFlow:
         activator_b = make_activator(client, machine_code="machineB")
         resp = activator_b.activate(code)
         assert resp.result == "error"
-        assert "其他设备" in resp.error_msg
+        # 与“码不存在”对外不可区分（GRAY-001）
+        assert "已被使用" in resp.error_msg
 
     def test_multiple_codes_one_machine(self, client, make_activator, storage):
         """同一台机器可激活多个不同激活码。"""
@@ -151,6 +152,25 @@ class TestScripts:
         assert encryptor.has_public_key
         # 公钥可单独加载
         RSAEncryptor.from_public_key_pem(pub_path.read_bytes())
+
+    def test_generate_keys_with_passphrase_roundtrip(self, tmp_path):
+        """带口令的私钥：错误口令被拒、正确口令可加载（LOW-001）。"""
+        from sealium.scripts.generate_keys import generate_key_pair
+
+        priv_path, _ = generate_key_pair(
+            private_key_path=tmp_path / "enc.pem",
+            public_key_path=tmp_path / "enc.pub",
+            key_size=2048,
+            passphrase="correct-horse-battery",
+        )
+        # 错误口令 -> 失败
+        with pytest.raises(Exception):
+            RSAEncryptor.from_private_key_pem(priv_path.read_bytes(), password=b"wrong")
+        # 正确口令 -> 加载成功
+        enc = RSAEncryptor.from_private_key_pem(
+            priv_path.read_bytes(), password=b"correct-horse-battery"
+        )
+        assert enc.has_private_key
 
     def test_generate_activation_codes_roundtrips_through_real_flow(
         self, client, make_activator, storage

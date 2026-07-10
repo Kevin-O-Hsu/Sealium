@@ -23,6 +23,7 @@ from sealium.common.exceptions import ConfigError
 from sealium.server.activation_service import ActivationService
 from sealium.server.config import ServerConfig, config as default_config
 from sealium.server.database import ActivationCodeStorage, SQLiteDatabase
+from sealium.server.rate_limit import InMemoryRateLimiter, NullRateLimiter, RateLimiter
 from sealium.server.replay_guard import ReplayGuard
 from sealium.server.routes.activation import create_router
 
@@ -30,11 +31,16 @@ logger = logging.getLogger("sealium.server")
 
 
 def _load_server_encryptor(cfg: ServerConfig) -> RSAEncryptor:
-    """从文件加载服务端私钥。"""
+    """从文件加载服务端私钥（可选口令解密，LOW-001）。"""
     if not cfg.server_private_key_path.exists():
         raise ConfigError(f"服务端私钥文件不存在: {cfg.server_private_key_path}")
+    password = (
+        cfg.server_private_key_passphrase.encode("utf-8")
+        if cfg.server_private_key_passphrase
+        else None
+    )
     with open(cfg.server_private_key_path, "rb") as f:
-        return RSAEncryptor.from_private_key_pem(f.read())
+        return RSAEncryptor.from_private_key_pem(f.read(), password=password)
 
 
 def _open_storage(cfg: ServerConfig) -> tuple[SQLiteDatabase, ActivationCodeStorage]:
@@ -51,12 +57,13 @@ def create_app(
     encryptor: Optional[RSAEncryptor] = None,
     storage: Optional[ActivationCodeStorage] = None,
     replay_guard: Optional[ReplayGuard] = None,
+    rate_limiter: Optional[RateLimiter] = None,
     now_provider: Optional[Callable[[], datetime]] = None,
 ) -> FastAPI:
     """
     创建 FastAPI 应用。
 
-    所有运行时依赖（加密器、存储、防重放、时间）均可注入；为 ``None`` 时从
+    所有运行时依赖（加密器、存储、防重放、限流、时间）均可注入；为 ``None`` 时从
     配置加载真实资源（私钥文件、SQLite）。测试时注入临时依赖即可完全离线运行。
     """
     cfg = config or default_config
@@ -89,6 +96,16 @@ def create_app(
             cfg.timestamp_tolerance_seconds,
             now_provider=now_provider,
         )
+        # 限流器：注入优先；否则按配置启用进程内固定窗口限流（MEDIUM-002）
+        if rate_limiter is not None:
+            limiter = rate_limiter
+        elif cfg.rate_limit_enabled:
+            limiter = InMemoryRateLimiter(
+                cfg.rate_limit_max_requests, cfg.rate_limit_window_seconds
+            )
+        else:
+            limiter = NullRateLimiter()
+        app.state.rate_limiter = limiter
 
         if cfg.debug:
             cfg.display()
@@ -106,13 +123,19 @@ def create_app(
         description="在线激活验证模块服务端",
         lifespan=lifespan,
         debug=cfg.debug,
+        # 生产（debug=False）关闭自动文档，避免泄露接口结构（MEDIUM-005）
+        docs_url="/docs" if cfg.debug else None,
+        redoc_url="/redoc" if cfg.debug else None,
+        openapi_url="/openapi.json" if cfg.debug else None,
     )
     app.state.config = cfg
 
+    # CORS：本接口由原生客户端（application/octet-stream）调用，无需浏览器凭据；
+    # 关闭 allow_credentials 以避免 “* + credentials” 误配（MEDIUM-001）。
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cfg.cors_origins,
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

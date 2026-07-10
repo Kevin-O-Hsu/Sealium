@@ -101,6 +101,26 @@ is injected — no live server or network required.
 
 ---
 
+## 🛡️ Deployment Hardening
+
+Sealium is designed to run **behind a reverse proxy / firewall**, not exposed bare to
+the public network:
+
+- **Bind address** — defaults to `0.0.0.0`; restrict via `HOST=127.0.0.1` when running
+  co-located with the proxy.
+- **TLS** — the app-layer hybrid encryption protects every payload end-to-end, but you
+  should still terminate TLS at the reverse proxy (with HSTS) to hide metadata.
+- **Rate limiting** — enabled by default (`RATE_LIMIT_ENABLED`, 60 req / 60 s per IP);
+  tune via `RATE_LIMIT_MAX_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS`. In multi-worker
+  deployments the limiter is per-process — inject a shared backend for global limits.
+- **Docs** — `/docs`, `/redoc`, `/openapi.json` are auto-disabled when `DEBUG=false`.
+- **Key material** — `data/server_private.pem` and the SQLite DB are created with
+  `0600` permissions; never commit them (already gitignored).
+- **Multi-worker caveat** — the in-memory replay guard and rate limiter are
+  per-process; for cross-worker consistency, inject a shared store (Redis).
+
+---
+
 ## 📄 License
 
 GPLv3 © Sealium Contributors

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 
 import pytest
@@ -72,7 +73,8 @@ class TestCodeLookup:
     def test_missing_code(self, service: ActivationService):
         resp = service.process(make_request(code="ghost"))
         assert resp.result == "error"
-        assert "不存在" in resp.error_msg
+        # 与“已被他机占用”对外不可区分（GRAY-001 关闭存在性枚举）
+        assert "已被使用" in resp.error_msg
 
 
 class TestUsedCodeBranches:
@@ -102,7 +104,8 @@ class TestUsedCodeBranches:
         )
         resp = service.process(make_request(machine="other"))
         assert resp.result == "error"
-        assert "其他设备" in resp.error_msg
+        # 与“码不存在”对外不可区分（GRAY-001）
+        assert "已被使用" in resp.error_msg
 
 
 class TestExpiry:
@@ -141,7 +144,7 @@ class TestFreshActivation:
         assert resp.result == "success"
         assert resp.authorized_until == "永久"
 
-    def test_db_error_returns_error(self, service: ActivationService, storage):
+    def test_db_error_returns_generic_error(self, service: ActivationService, storage):
         storage.create(ActivationCode(activation_code="c"))
 
         def boom(*args, **kwargs):
@@ -150,4 +153,46 @@ class TestFreshActivation:
         storage.bind_machine_code = boom
         resp = service.process(make_request())
         assert resp.result == "error"
-        assert "数据库更新失败" in resp.error_msg
+        # 对外通用提示，不回显原始异常（LOW-003）
+        assert "激活失败" in resp.error_msg
+        assert "db down" not in resp.error_msg
+
+
+class TestConcurrentBindingAtomicity:
+    """回归测试：并发抢绑同一未用码，仅一台机器能成功（HIGH-001）。"""
+
+    def test_one_code_activates_exactly_one_machine_under_concurrency(
+        self, storage: ActivationCodeStorage
+    ):
+        # 用足够大的防重放缓存，确保各线程独立 nonce 不被误逐
+        svc = ActivationService(
+            storage, ReplayGuard(max_size=100000), 300, now_provider=lambda: NOW
+        )
+        storage.create(ActivationCode(activation_code="shared", features=["pro"]))
+
+        n = 25
+        results: list = []
+        barrier = threading.Barrier(n)
+
+        def worker(i: int):
+            req = ActivationRequest(
+                activation_code="shared",
+                machine_code=f"machine{i}",
+                timestamp=NOW_TS,
+                nonce=f"nonce{i}",
+            )
+            barrier.wait()  # 同时释放所有线程，最大化竞态窗口
+            results.append(svc.process(req).result)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        successes = results.count("success")
+        assert successes == 1, f"期望仅 1 台成功，实际 {successes} 台（竞态未修复）"
+        # 其余均被拒为“不可用”
+        bound = storage.get_by_code("shared")
+        assert bound.status == ActivationStatus.USED
+        assert bound.bound_machine_code.startswith("machine")

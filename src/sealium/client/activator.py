@@ -96,36 +96,40 @@ class Activator:
         except Exception as e:
             raise ActivationError(f"加密请求失败: {e}") from e
 
-        # 6. 发送请求
+        # 会话 AES 密钥用毕即清，避免在长生命周期进程中残留（LOW-004）
         try:
-            resp = self._post(
-                self.server_url,
-                encrypted_request,
-                {"Content-Type": "application/octet-stream"},
-                self._timeout,
-            )
-            resp.raise_for_status()
-        except requests.RequestException as e:
-            raise ActivationError(f"网络请求失败: {e}") from e
+            # 6. 发送请求
+            try:
+                resp = self._post(
+                    self.server_url,
+                    encrypted_request,
+                    {"Content-Type": "application/octet-stream"},
+                    self._timeout,
+                )
+                resp.raise_for_status()
+            except requests.RequestException as e:
+                raise ActivationError(f"网络请求失败: {e}") from e
 
-        # 7. 解密响应（用同一把 AES 密钥）
-        try:
-            decrypted_data = self.key_manager.decrypt_response(resp.content)
-        except Exception as e:
-            raise ActivationError(f"解密响应失败: {e}") from e
+            # 7. 解密响应（用同一把 AES 密钥）
+            try:
+                decrypted_data = self.key_manager.decrypt_response(resp.content)
+            except Exception as e:
+                raise ActivationError(f"解密响应失败: {e}") from e
 
-        # 8. 解析 JSON
-        try:
-            response_dict = json.loads(decrypted_data.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            raise ActivationError(f"解析响应失败: {e}") from e
+            # 8. 解析 JSON
+            try:
+                response_dict = json.loads(decrypted_data.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                raise ActivationError(f"解析响应失败: {e}") from e
 
-        # 9. 构造响应对象
-        activation_response = ActivationResponse.from_dict(response_dict)
+            # 9. 构造响应对象
+            activation_response = ActivationResponse.from_dict(response_dict)
 
-        # 10. 校验回显 nonce（防篡改 / 防重放）
-        if activation_response.result == "success":
-            if activation_response.nonce != nonce_c:
-                raise ActivationError("响应 nonce 不匹配，可能是重放攻击")
+            # 10. 校验回显 nonce（防篡改 / 防重放）
+            if activation_response.result == "success":
+                if activation_response.nonce != nonce_c:
+                    raise ActivationError("响应 nonce 不匹配，可能是重放攻击")
 
-        return activation_response
+            return activation_response
+        finally:
+            self.key_manager.clear_aes_key()

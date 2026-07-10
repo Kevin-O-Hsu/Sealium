@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -44,6 +45,11 @@ class SQLiteDatabase:
         self._connection.execute("PRAGMA foreign_keys = ON")
         if not db_exists:
             self.init_tables()
+            # 新建的库文件收紧权限为仅属主可读写（LOW-002），避免多用户主机上被他人读取
+            try:
+                os.chmod(self.db_path, 0o600)
+            except OSError:
+                pass  # 某些文件系统不支持 chmod，忽略而非崩溃
 
     def close(self) -> None:
         """关闭连接。"""
@@ -195,22 +201,34 @@ class ActivationCodeStorage:
 
     def bind_machine_code(
         self, code: str, machine_code: str, activated_at: datetime
-    ) -> None:
-        """绑定机器码并记录激活时间、置为已使用。"""
+    ) -> bool:
+        """
+        原子绑定机器码并记录激活时间、置为已使用。
+
+        通过 ``WHERE ... AND status = UNUSED`` 把“检查未使用 -> 置为已使用”
+        压缩成单条 UPDATE，消除读-改-写竞态（HIGH-001）。多线程/多进程并发
+        抢绑同一激活码时，只有第一个 UPDATE 会命中（``rowcount == 1``），
+        其余落空（``rowcount == 0``）。
+
+        :return: ``True`` 表示本次调用赢得了绑定（状态已从未用变为已用）；
+                 ``False`` 表示已被他人抢先绑定，调用方应据此返回相应响应。
+        """
         with self.db.transaction():
-            self.db.execute(
+            cursor = self.db.execute(
                 """
                 UPDATE activation_codes
                 SET bound_machine_code = ?, activated_at = ?, status = ?
-                WHERE code = ?
+                WHERE code = ? AND status = ?
                 """,
                 (
                     machine_code,
                     self._datetime_to_str(activated_at),
                     ActivationStatus.USED.value,
                     code,
+                    ActivationStatus.UNUSED.value,
                 ),
             )
+            return cursor.rowcount == 1
 
     def update_expires_at(self, code: str, expires_at: datetime) -> None:
         """更新授权截止时间。"""

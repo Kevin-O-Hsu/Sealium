@@ -88,7 +88,8 @@ class TestActivationRoundtrip:
         assert resp.status_code == 200
         data = decrypt(km, resp.content)
         assert data["result"] == "error"
-        assert "不存在" in data["error_msg"]
+        # 统一为通用提示（GRAY-001）
+        assert "已被使用" in data["error_msg"]
 
     def test_invalid_request_format_returns_encrypted_error(
         self, client, server_public_pem

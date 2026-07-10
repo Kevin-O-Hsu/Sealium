@@ -12,6 +12,7 @@ from fastapi import Depends, Request
 
 from sealium.common.crypto import RSAEncryptor
 from sealium.server.activation_service import ActivationService
+from sealium.server.rate_limit import RateLimiter
 
 
 def get_server_encryptor(request: Request) -> RSAEncryptor:
@@ -24,10 +25,16 @@ def get_activation_service(request: Request) -> ActivationService:
     return request.app.state.activation_service
 
 
-# 便于测试一次性取到两者
+def get_rate_limiter(request: Request) -> RateLimiter:
+    """获取速率限制器（可能为 NullRateLimiter）。"""
+    return request.app.state.rate_limiter
+
+
+# 便于测试一次性取到三者
 def get_activation_dependencies(
     encryptor: RSAEncryptor = Depends(get_server_encryptor),
     service: ActivationService = Depends(get_activation_service),
-) -> tuple[RSAEncryptor, ActivationService]:
-    """同时获取加密器与激活服务。"""
-    return encryptor, service
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
+) -> tuple[RSAEncryptor, ActivationService, RateLimiter]:
+    """同时获取加密器、激活服务与限流器。"""
+    return encryptor, service, rate_limiter

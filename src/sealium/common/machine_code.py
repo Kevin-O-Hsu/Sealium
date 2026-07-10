@@ -16,8 +16,9 @@ from __future__ import annotations
 import hashlib
 import os
 import secrets
-import time
 from collections.abc import Callable, Iterable
+
+from sealium.common.exceptions import SealiumError
 
 # 一条硬件信息：(类型标签, 值)
 HardwareInfo = tuple[str, str]
@@ -154,17 +155,28 @@ def collect_hardware_info() -> list[HardwareInfo]:
     return info
 
 
-def hash_hardware_info(hardware_info: Iterable[HardwareInfo]) -> str:
+def hash_hardware_info(
+    hardware_info: Iterable[HardwareInfo],
+    fallback_secret: str | None = None,
+) -> str:
     """
     将硬件信息列表哈希为 64 位十六进制机器码（纯函数）。
 
     * 带类型标签并按标签排序后拼接，防止位置交换攻击。
-    * 信息过少（<3 条）时补充当前时间，保证可用性（降低安全性）。
+    * 信息过少（<3 条）时：若提供 ``fallback_secret`` 则以其作为稳定补充
+      （用于硬件特征稀疏的机器仍能得到确定性指纹）；否则 **fail-safe** 抛出
+      :class:`SealiumError`——绝不注入 ``time.time()`` 之类每次都变的值，
+      那会让同一机器每次生成不同机器码，既破坏绑定又破坏幂等（MEDIUM-003）。
     * 熵值过低（唯一字符 <10）时加盐重新哈希，避免简单重复。
     """
     info_list = list(hardware_info)
     if len(info_list) < 3:
-        info_list.append(("fallback", str(time.time())))
+        if fallback_secret is None:
+            raise SealiumError(
+                "硬件信息不足（少于 3 条特征），无法生成稳定的机器码；"
+                "请提供 fallback_secret 或扩充硬件采集来源"
+            )
+        info_list = [*info_list, ("install", str(fallback_secret))]
 
     combined_parts = [f"{tag}:{value}" for tag, value in sorted(info_list, key=lambda x: x[0])]
     combined = "|".join(combined_parts).encode("utf-8")
@@ -178,13 +190,21 @@ def hash_hardware_info(hardware_info: Iterable[HardwareInfo]) -> str:
     return machine_code
 
 
-def generate_machine_code(collector: HardwareCollector | None = None) -> str:
+def generate_machine_code(
+    collector: HardwareCollector | None = None,
+    fallback_secret_provider: Callable[[], str] | None = None,
+) -> str:
     """
     生成机器码。
 
     :param collector: 硬件采集器；为 ``None`` 时使用默认 WMI 采集器。
                      测试时可注入返回固定硬件信息的采集器。
+    :param fallback_secret_provider: 当采集到的特征少于 3 条时的稳定补充来源
+                     （如读取/创建一次的每安装随机密钥）。为 ``None`` 时缺特征即
+                     fail-safe 抛错，而非静默削弱绑定强度。
     :return: 64 位十六进制机器码字符串。
     """
     collect = collector if collector is not None else collect_hardware_info
-    return hash_hardware_info(collect())
+    info = collect()
+    secret = fallback_secret_provider() if (len(info) < 3 and fallback_secret_provider) else None
+    return hash_hardware_info(info, fallback_secret=secret)

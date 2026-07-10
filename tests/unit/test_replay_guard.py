@@ -18,14 +18,27 @@ class TestInMemoryReplayStore:
         assert store.seen(("code", "n2")) is False
         assert store.seen(("other", "n1")) is False
 
-    def test_overflow_clears_store(self):
+    def test_overflow_evicts_oldest_only_not_all(self):
+        """超限时仅驱逐最旧一条（LRU），绝非整体清空（HIGH-002）。"""
         store = InMemoryReplayStore(max_size=2)
         store.seen(("a", "1"))
         store.seen(("b", "1"))
         assert len(store._seen) == 2
-        store.seen(("c", "1"))  # 超限 -> 整体清空
-        # 清空后，曾经的 key 重新视为新
+        store.seen(("c", "1"))  # 超限 -> 仅驱逐最旧的 ("a","1")
+        # 直接核对存储：仅最旧的 ("a","1") 被逐出，其余保留
+        assert ("a", "1") not in store._seen
+        assert ("b", "1") in store._seen
+        assert ("c", "1") in store._seen
+        assert len(store._seen) == 2
+
+    def test_ttl_expiry_makes_key_new_again(self):
+        """TTL 过期后，同一 key 不再视为重放。"""
+        clock = [0.0]
+        store = InMemoryReplayStore(ttl_seconds=10, now_provider=lambda: clock[0])
         assert store.seen(("a", "1")) is False
+        assert store.seen(("a", "1")) is True  # 窗口内重放
+        clock[0] += 11  # 超过 TTL
+        assert store.seen(("a", "1")) is False  # 过期后重新视为新
 
     def test_clear_method(self):
         store = InMemoryReplayStore()

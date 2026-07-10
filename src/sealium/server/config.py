@@ -34,6 +34,10 @@ class ServerConfig:
     activation_path: str
     log_level: str
     log_format: str
+    rate_limit_enabled: bool = True
+    rate_limit_max_requests: int = 60
+    rate_limit_window_seconds: int = 60
+    server_private_key_passphrase: Optional[str] = None
 
     @classmethod
     def from_env(cls, env: Optional[Mapping[str, str]] = None) -> ServerConfig:
@@ -67,6 +71,14 @@ class ServerConfig:
             log_level=get("LOG_LEVEL", "INFO"),
             log_format=get(
                 "LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            ),
+            rate_limit_enabled=get("RATE_LIMIT_ENABLED", "True").lower() == "true",
+            rate_limit_max_requests=int(get("RATE_LIMIT_MAX_REQUESTS", "60")),
+            rate_limit_window_seconds=int(get("RATE_LIMIT_WINDOW_SECONDS", "60")),
+            # 私钥落盘口令（LOW-001）：设置后服务端私钥以口令加密存储，启动时从环境读取解密。
+            # 为空则维持明文私钥（向后兼容）。
+            server_private_key_passphrase=(
+                get("SERVER_PRIVATE_KEY_PASSPHRASE", "") or None
             ),
         )
 

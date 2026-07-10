@@ -90,11 +90,44 @@ class ActivationRequest:
 
     @classmethod
     def from_dict(cls, data: dict) -> ActivationRequest:
+        """
+        从字典创建实例，严格校验字段类型与基本格式（MEDIUM-004 / SMELL-002）。
+
+        :raises ValueError: 字段缺失、类型非法或格式不合法时抛出，调用方据此返回错误。
+        """
+        if not isinstance(data, dict):
+            raise ValueError("请求体必须是 JSON 对象")
+
+        try:
+            code = data["activation_code"]
+            machine = data["machine_code"]
+            timestamp = data["timestamp"]
+            nonce = data["nonce"]
+        except KeyError as exc:
+            raise ValueError(f"缺少必填字段: {exc.args[0]}") from exc
+
+        if not (isinstance(code, str) and code):
+            raise ValueError("activation_code 必须为非空字符串")
+        if not (isinstance(machine, str) and machine):
+            raise ValueError("machine_code 必须为非空字符串")
+        if not (isinstance(nonce, str) and nonce):
+            raise ValueError("nonce 必须为非空字符串")
+
+        # timestamp 必须为整数；兼容纯数字字符串（防御性转换），排除 bool。
+        if isinstance(timestamp, bool):
+            raise ValueError("timestamp 必须为整数")
+        if isinstance(timestamp, int):
+            pass
+        elif isinstance(timestamp, str) and timestamp.lstrip("-").isdigit():
+            timestamp = int(timestamp)
+        else:
+            raise ValueError("timestamp 必须为整数")
+
         return cls(
-            activation_code=data["activation_code"],
-            machine_code=data["machine_code"],
-            timestamp=data["timestamp"],
-            nonce=data["nonce"],
+            activation_code=code,
+            machine_code=machine,
+            timestamp=timestamp,
+            nonce=nonce,
         )
 
 

@@ -99,6 +99,7 @@ def isolated_config(base_dir: Path) -> ServerConfig:
         activation_path="/activation",
         log_level="WARNING",
         log_format="%(message)s",
+        rate_limit_enabled=False,  # 测试默认关闭限流，保证确定性
     )
 
 
