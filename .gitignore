@@ -226,3 +226,11 @@ __marimo__/
 *.key
 *.db
 *.sqlite3
+
+# 安全审计产物（本地分析报告，不应入库）
+security-audit-report.md
+security-audit-report.pdf
+security-audit-report.sarif
+security-audit-report.json
+security-audit-triage.md
+.security-audit-baseline.json
