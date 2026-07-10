@@ -33,6 +33,6 @@ RSA-4096 + AES-256-GCM 混合加密端到端保护。
 ## 版本与兼容性
 
 - 当前版本：见 [`pyproject.toml`](../pyproject.toml) 或 `pip show sealium`。
-- Python ≥ 3.13。
+- Python ≥ 3.9。
 - 硬件绑定在 **1.3.0** 重构为分量指纹（**breaking change**）：旧的整体哈希机器码不再受支持。详见 [硬件绑定原理 §迁移](hardware-binding.md#升级与迁移)。
 - 协议层（加密、请求/响应结构）自 1.x 起稳定。

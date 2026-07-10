@@ -8,7 +8,7 @@
 pip install sealium
 ```
 
-Python ≥ 3.13。Windows 上自动装 `wmi`（机器码采集需要）；非 Windows 客户端无法采集硬件
+Python ≥ 3.9。Windows 上自动装 `wmi`（机器码采集需要）；非 Windows 客户端无法采集硬件
 指纹（采集仅支持 Windows，见 [硬件绑定 §平台支持](hardware-binding.md#平台支持)）。
 
 ## 2. 取得服务端公钥

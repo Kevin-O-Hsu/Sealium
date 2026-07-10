@@ -29,10 +29,15 @@
 from __future__ import annotations
 
 import os
-import tomllib
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional, Tuple
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # Python 3.9 / 3.10：tomllib 尚未进入标准库，用等价 API 的第三方 tomli
+    import tomli as tomllib
 
 from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import (

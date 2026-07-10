@@ -9,12 +9,13 @@ description = "Secure license key generation, software activation, and hardware 
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Kevin Hsu" }]
-requires-python = ">=3.13"
+requires-python = ">=3.9"
 dependencies = [
     "cryptography>=42",
     "requests>=2.28",
     "fastapi>=0.100",
     "pydantic-settings>=2.0",
+    "tomli; python_version < '3.11'",
     "uvicorn>=0.20",
     "wmi; platform_system == 'Windows'",
 ]
