@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sealium"
-version = "1.3.0"
+version = "1.3.1"
 description = "Secure license key generation, software activation, and hardware binding."
 readme = "README.md"
 license = "MIT"
