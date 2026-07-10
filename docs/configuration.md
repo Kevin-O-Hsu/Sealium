@@ -1,10 +1,55 @@
 # 配置参考
 
-Sealium 服务端采用**工业级配置**：以 TOML 配置文件（`sealium.toml`）为主载体，
-环境变量 / `.env` 覆盖敏感项与部署差异，pydantic-settings 提供类型与范围校验。
+> 🎯 **零配置开箱即用**——无需任何配置文件就能跑：
+>
+> ```bash
+> pip install sealium
+> python -m sealium.scripts.generate_keys
+> python -m sealium.scripts.generate_activation_codes --count 10
+> python -m sealium.server.run
+> ```
+>
+> 默认值齐全（监听 `0.0.0.0:8000`，数据落 `./data/`）。**配置文件是可选的**——
+> 仅当需要覆盖默认值时才用。本篇讲的就是"需要时怎么配"。
 
-> ⚠️ **1.4.0 起 breaking**：旧的裸环境变量（`HOST`/`PORT`/`DATABASE_PATH`/…）已
-> 废弃，不再生效。迁移方式见文末 [§从旧版迁移（1.3.x → 1.4.0）](#从旧版迁移13x--140)。
+Sealium 服务端采用工业级配置：TOML 配置文件（`sealium.toml`）为主载体，环境变量
+覆盖敏感项与部署差异，pydantic-settings 提供类型与范围校验。
+
+> ⚠️ **1.4.0 起 breaking**：旧的裸环境变量（`HOST`/`PORT`/`DATABASE_PATH`/…）已废弃。
+> 迁移见文末 [§从旧版迁移](#从旧版迁移13x--140)。
+
+---
+
+## 最简路径（无需配置文件）
+
+```bash
+pip install sealium
+python -m sealium.scripts.generate_keys          # 生成 RSA 密钥对到 ./data/
+python -m sealium.scripts.generate_activation_codes --count 10  # 生成激活码
+python -m sealium.server.run                      # 启动，监听 0.0.0.0:8000
+```
+
+完。不创建任何配置文件，全部用内置默认值。
+
+## 需要配置时：一键生成模板
+
+想覆盖默认值（端口、绑定地址、限流、机器码策略等），在**当前目录**生成配置模板：
+
+```bash
+python -m sealium.server.config_cli init      # 生成 ./sealium.toml（模板内嵌，pip 安装即可用）
+# 编辑 sealium.toml
+python -m sealium.server.config_cli check     # 自检
+python -m sealium.server.run
+```
+
+> `init` 把模板写在你**当前所在的目录**（运行服务的工作目录），不是 site-packages。
+> 模板作为代码常量内嵌，pip 安装后一定能用——**不依赖仓库里的任何文件**。
+
+私钥口令等敏感项用**环境变量**，不写进 `sealium.toml`：
+
+```bash
+export SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE="a-long-random-passphrase"
+```
 
 ---
 
@@ -17,17 +62,16 @@ Sealium 服务端采用**工业级配置**：以 TOML 配置文件（`sealium.to
 | 1 | 构造参数 `ServerConfig(server=…)` | 程序化注入（测试 / 嵌入式） |
 | 2 | 环境变量 `SEALIUM_<SECTION>__<KEY>` | 部署差异、敏感项、容器/systemd 注入 |
 | 3 | `.env` 文件（与 2 同语义） | 本地开发、敏感项文件化 |
-| 4 | `sealium.toml` 配置文件 | **结构化主配置**（可注释、可 review、可版本化） |
-| 5 | 内置默认值 | 零配置开箱即用 |
+| 4 | `sealium.toml` 配置文件 | 结构化主配置（可注释、可 review、可版本化） |
+| 5 | 内置默认值 | **零配置开箱即用** |
 
-无 `sealium.toml` 也能启动（全部走默认）；TOML 仅作覆盖。
+不创建 `sealium.toml` 也能启动（全部走默认）；TOML 仅作覆盖。
 
 ---
 
 ## TOML 全 schema（`sealium.toml`）
 
-完整模板见仓库根 [`sealium.toml.example`](../sealium.toml.example)。复制为
-`sealium.toml` 后按需修改（`sealium.toml` 已被 gitignore，不入库）。
+`config_cli init` 生成的模板即下表各项（带注释）。逐项说明：
 
 ### `[server]` 网络与路由
 
@@ -113,15 +157,22 @@ SEALIUM_<SECTION>__<KEY>
 | `SEALIUM_MACHINE_ID__THRESHOLD` | `[machine_id] threshold` |
 | `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE` | `[security] private_key_passphrase`（敏感） |
 
-大小写不敏感。优先级高于 TOML，低于构造参数。
+大小写不敏感。优先级高于 TOML，低于构造参数。这是**不改配置文件**就能覆盖单项的
+最简方式（容器、systemd、临时测试都适用）：
+
+```bash
+SEALIUM_SERVER__PORT=9000 python -m sealium.server.run
+```
 
 ## `.env` 文件
 
-`.env`（项目根，gitignore）与环境变量同语义，适合放敏感项与本地开发差异：
+`.env`（当前目录）与环境变量同语义，适合放敏感项与本地开发差异。它就是一个普通文本
+文件，每行一个变量，自己创建即可：
 
-```dotenv
+```bash
+cat > .env <<'EOF'
 SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE=your-long-random-passphrase
-SEALIUM_SERVER__HOST=127.0.0.1
+EOF
 ```
 
 容器 / systemd 用真正的环境变量或 `EnvironmentFile`，效果相同。
@@ -143,10 +194,9 @@ python -m sealium.server.config_cli --config /etc/sealium/sealium.toml check
 ## 敏感字段隔离
 
 **私钥口令**（`[security] private_key_passphrase`）必须经环境变量 / `.env` 注入，
-**绝不写入 `sealium.toml`**（TOML 通常入库或共享，明文口令会泄露）：
+**绝不写入 `sealium.toml`**：
 
-- 模板 `sealium.toml.example` 中对应行仅作注释占位。
-- 该字段类型为 `pydantic.SecretStr`，`repr`/序列化/`/debug/config` 输出**不回显明文**
+- 类型为 `pydantic.SecretStr`，`repr`/序列化/`/debug/config` 输出**不回显明文**
   （以 `<set>`/`<unset>` 表示）。
 
 ```bash
@@ -158,67 +208,18 @@ export SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE="a-long-random-passphrase"
 
 ---
 
-## 配置自检（`config_cli`）
-
-部署前 / CI 中自检配置，退出码反映健康：
+## 配置管理 CLI（`config_cli`）
 
 ```bash
-python -m sealium.server.config_cli check    # 加载 + 业务校验（私钥存在等）
-python -m sealium.server.config_cli show     # 脱敏打印生效配置 + 来源
+python -m sealium.server.config_cli init              # 当前目录生成 sealium.toml 模板（--force 覆盖）
+python -m sealium.server.config_cli check             # 加载 + 业务校验，退出码反映健康
+python -m sealium.server.config_cli show              # 脱敏打印生效配置 + 来源
 ```
 
-`show` 输出 JSON，路径已解析为绝对路径，口令脱敏。`check` 失败返回非零退出码，
-适合纳入部署脚本 / CI 门禁。
-
----
-
-## 配置示例
-
-`sealium.toml`（结构化主配置，非敏感项）：
-
-```toml
-[server]
-host = "127.0.0.1"
-port = 8000
-debug = false
-
-[paths]
-database = "data/database.db"
-private_key = "data/server_private.pem"
-
-[security]
-timestamp_tolerance_seconds = 300
-replay_cache_size = 10000
-
-[rate_limit]
-enabled = true
-max_requests = 60
-window_seconds = 60
-
-[machine_id]
-threshold = 0.70
-core_min = 3
-spoof_max = 0.5
-
-[logging]
-level = "INFO"
-```
-
-`.env`（敏感项，gitignore）：
-
-```dotenv
-SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE=change-me-long-random
-```
-
-systemd unit 片段：
-
-```ini
-[Service]
-EnvironmentFile=/etc/sealium/sealium.env
-WorkingDirectory=/opt/sealium
-ExecStart=/path/to/python -m sealium.server.run --config /etc/sealium/sealium.toml
-User=sealium
-```
+- `init`：模板内嵌为代码常量，pip 安装后**一定可用**（不依赖仓库文件）。生成的
+  `sealium.toml` 在当前目录。
+- `check`：纳入部署脚本 / CI 门禁；失败返回非零退出码。
+- `show`：路径已解析为绝对路径，口令脱敏。
 
 ---
 
@@ -227,7 +228,7 @@ User=sealium
 - **类型 / 范围**：pydantic 在配置构造时即校验（`port` 范围、`threshold` 越界、
   `replay_cache_size` 为正等），非法值立即 `ValidationError` 并聚合报错。
 - **业务校验**：`ServerConfig.validate()` 检查私钥文件存在，由应用 `lifespan` 在
-  启动时调用（注入加密器的测试 / 调试模式跳过）。可用 `config_cli check` 独立触发。
+  启动时调用（注入加密器的测试 / 调试模式跳过）。`config_cli check` 可独立触发。
 
 ---
 
@@ -244,9 +245,10 @@ User=sealium
 
 ---
 
-## 从旧版迁移（1.3.x → 1.4.0）
+## 从旧版迁移（1.3.x → 1.4.0+）
 
-1.4.0 起，旧的裸环境变量全部废弃。按下表迁移到 `sealium.toml`（或对应 `SEALIUM_*` 环境变量）：
+1.4.0 起，旧的裸环境变量全部废弃。**最简单的迁移：什么都不用做**——零配置开箱即用。
+若曾用旧环境变量自定义过，按下表迁移到 `sealium.toml`（或对应 `SEALIUM_*` 环境变量）：
 
 | 旧环境变量（1.3.x） | 新位置 |
 |---|---|
@@ -259,7 +261,7 @@ User=sealium
 | `DATABASE_PATH` | `[paths] database` |
 | `SERVER_PRIVATE_KEY_PATH` | `[paths] private_key` |
 | `SERVER_PUBLIC_KEY_PATH` | `[paths] public_key` |
-| `SERVER_PRIVATE_KEY_PASSPHRASE` | `.env` `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE` |
+| `SERVER_PRIVATE_KEY_PASSPHRASE` | 环境变量 `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE` |
 | `TIME_STAMP_TOLERANCE_SECONDS` | `[security] timestamp_tolerance_seconds` |
 | `REPLAY_CACHE_SIZE` | `[security] replay_cache_size` |
 | `RATE_LIMIT_ENABLED` | `[rate_limit] enabled` |
@@ -271,9 +273,11 @@ User=sealium
 | `MACHINE_ID_CORE_MIN` | `[machine_id] core_min` |
 | `MACHINE_ID_SPOOF_MAX` | `[machine_id] spoof_max` |
 
-迁移步骤：
+需要配置文件时：
 
-1. `cp sealium.toml.example sealium.toml`，按需填写。
-2. 敏感口令写入 `.env`（`SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE`）。
-3. `python -m sealium.server.config_cli check` 自检。
-4. 启动：`python -m sealium.server.run`（或 `--config <path>`）。
+```bash
+python -m sealium.server.config_cli init    # 生成 sealium.toml
+# 按上表把旧值填入，或直接用 SEALIUM_* 环境变量覆盖
+python -m sealium.server.config_cli check   # 自检
+python -m sealium.server.run
+```

@@ -110,25 +110,32 @@ See [docs/architecture.md](docs/architecture.md) for the full design.
 
 ## 🚀 Server in 60 seconds
 
+Zero config — install and run:
+
 ```bash
 pip install sealium
 
-# 1. (optional) Configure: copy the template and edit (zero-config works too)
-cp sealium.toml.example sealium.toml
-
-# 2. Generate the server RSA keypair (keep private key on the server only)
+# 1. Generate the server RSA keypair (keep private key on the server only)
 python -m sealium.scripts.generate_keys
 
-# 3. Generate activation codes into the database
+# 2. Generate activation codes into the database
 python -m sealium.scripts.generate_activation_codes --count 10 --features pro
 
-# 4. Run the activation service (behind a reverse proxy in production)
+# 3. Run the activation service (behind a reverse proxy in production)
 python -m sealium.server.run
 ```
 
-Configuration is driven by `sealium.toml` (structured, commentable) + `SEALIUM_*` env vars /
-`.env` (secrets & overrides). Validate with `python -m sealium.server.config_cli check`.
-Distribute `data/server_public.pem` with your client. Full guide: [docs/server-guide.md](docs/server-guide.md).
+Sensible defaults work out of the box (binds `0.0.0.0:8000`, data in `./data/`). To
+customize, generate a config template and edit:
+
+```bash
+python -m sealium.server.config_cli init     # writes sealium.toml in the current dir
+python -m sealium.server.config_cli check    # validate
+```
+
+Secrets (e.g. private-key passphrase) come from env vars, never the config file:
+`SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE=...`. Distribute `data/server_public.pem` with
+your client. Full guide: [docs/server-guide.md](docs/server-guide.md).
 
 ---
 

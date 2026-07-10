@@ -70,33 +70,50 @@ codes = generate_activation_codes(
 )
 ```
 
-## 4. 配置与启动服务
+## 4. 启动服务（零配置开箱即用）
 
-Sealium 用 `sealium.toml`（结构化主配置）+ 环境变量 / `.env`（覆盖与敏感项）。
-最快上手：
-
-```bash
-cp sealium.toml.example sealium.toml      # 按需编辑（非敏感项）
-cp .env.example .env                       # 填敏感项（如私钥口令）
-python -m sealium.server.config_cli check  # 配置自检（退出码反映健康）
-```
-
-无 `sealium.toml` 也能启动（零配置开箱即用）。全部配置项见 [配置参考](configuration.md)。
+无需任何配置文件，3 行命令即可运行：
 
 ```bash
-# 方式一：内置入口（参数取自配置；--config 指定配置文件）
+pip install sealium
+python -m sealium.scripts.generate_keys
+python -m sealium.scripts.generate_activation_codes --count 10
 python -m sealium.server.run
-python -m sealium.server.run --config /etc/sealium/sealium.toml
-
-# 方式二：直接 uvicorn（更灵活，如多 worker）
-uvicorn sealium.server.app:app --host 127.0.0.1 --port 8000 --workers 4
 ```
 
-默认监听 `0.0.0.0:8000`（生产建议在 `sealium.toml` 设 `[server] host = "127.0.0.1"`）。
-**设计上置于反向代理/防火墙之后**，不要裸暴露公网。
+默认监听 `0.0.0.0:8000`，数据落在当前目录 `./data/`（自动创建）。**设计上置于反向代理/
+防火墙之后**，不要裸暴露公网。
 
 健康检查：`GET /health` → `{"status":"ok","service":"activation"}`。
 激活接口：`POST /v1/activation`（`application/octet-stream`，见 [协议](protocol.md)）。
+
+### 需要覆盖默认值时（可选）
+
+生成配置模板到当前目录，按需编辑：
+
+```bash
+python -m sealium.server.config_cli init      # 生成 sealium.toml 模板
+python -m sealium.server.config_cli check     # 自检
+python -m sealium.server.run
+```
+
+也可用环境变量覆盖单项（`SEALIUM_<SECTION>__<KEY>`）：
+
+```bash
+SEALIUM_SERVER__PORT=9000 python -m sealium.server.run
+# 或指定配置文件：
+python -m sealium.server.run --config /etc/sealium/sealium.toml
+```
+
+敏感项（私钥口令）只用环境变量，**不写进配置文件**：
+
+```bash
+export SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE="a-long-random-passphrase"
+```
+
+默认 `[server] host = "0.0.0.0"`；生产建议绑定本机（`SEALIUM_SERVER__HOST=127.0.0.1`
+或 `sealium.toml` 里 `[server] host = "127.0.0.1"`）。完整配置项见
+[配置参考](configuration.md)。
 
 ## 5. 反向代理与 TLS（生产必备）
 
