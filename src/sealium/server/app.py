@@ -95,6 +95,7 @@ def create_app(
             replay_guard if replay_guard is not None else ReplayGuard(max_size=cfg.replay_cache_size),
             cfg.timestamp_tolerance_seconds,
             now_provider=now_provider,
+            machine_id_policy=cfg.machine_id_policy,
         )
         # 限流器：注入优先；否则按配置启用进程内固定窗口限流（MEDIUM-002）
         if rate_limiter is not None:

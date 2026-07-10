@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 
 from sealium.client.activator import Activator
 from sealium.common.crypto import RSAEncryptor
+from sealium.common.fingerprint import Component, MachineFingerprint
 from sealium.server.app import create_app
 from sealium.server.config import ServerConfig
 from sealium.server.database import ActivationCodeStorage, SQLiteDatabase
@@ -139,12 +140,40 @@ def client(make_app, storage: ActivationCodeStorage):
 
 # ==================== 客户端 ====================
 @pytest.fixture
-def make_activator(server_public_pem: str):
+def make_fingerprint():
+    """
+    返回测试指纹构造器：相同 ``seed`` → 相同核心分量；``drift=True`` → 外围分量与基准
+    不同（用于同机漂移场景）；``spoof`` 设 spoof_score。分量 value 用可读字符串
+    （非哈希），因测试只关心匹配逻辑（值相等即匹配）。
+    """
+
+    def _make_fp(seed: str = "m", *, spoof: float = 0.0, drift: bool = False) -> MachineFingerprint:
+        core_val = f"core-{seed}"
+        periph_val = f"periph-drift-{seed}" if drift else f"periph-{seed}"
+        return MachineFingerprint(
+            components=(
+                Component("cpu", core_val, True),
+                Component("board", core_val, True),
+                Component("bios", core_val, True),
+                Component("system_uuid", core_val, True),
+                Component("disk", periph_val, False),
+                Component("mac", periph_val, False),
+            ),
+            spoof_score=spoof,
+        )
+
+    return _make_fp
+
+
+@pytest.fixture
+def make_activator(server_public_pem: str, make_fingerprint):
     """
     返回一个 Activator 工厂：HTTP 通过桥接打到 TestClient，时间/机器码可注入。
     """
 
-    def _make(test_client: TestClient, *, timestamp: int = FIXED_TS, machine_code: str = "deadbeef" * 8) -> Activator:
+    def _make(test_client: TestClient, *, timestamp: int = FIXED_TS, machine_code: MachineFingerprint | None = None) -> Activator:
+        fp = machine_code if machine_code is not None else make_fingerprint()
+
         def poster(url, data, headers, timeout):
             return test_client.post(urlparse(url).path, content=data, headers=headers)
 
@@ -152,7 +181,7 @@ def make_activator(server_public_pem: str):
             "http://localhost/v1/activation",
             server_public_pem,
             timestamp_provider=lambda: timestamp,
-            machine_code_provider=lambda: machine_code,
+            machine_code_provider=lambda: fp,
             http_poster=poster,
         )
 

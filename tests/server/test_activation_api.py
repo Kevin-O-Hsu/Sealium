@@ -55,11 +55,11 @@ class TestHealthAndErrors:
 
 class TestActivationRoundtrip:
     def test_successful_activation(
-        self, client, server_public_pem, storage, unused_code, fixed_timestamp
+        self, client, server_public_pem, storage, unused_code, fixed_timestamp, make_fingerprint
     ):
         request_dict = {
             "activation_code": unused_code,
-            "machine_code": "m",
+            "machine_code": make_fingerprint().to_dict(),
             "timestamp": fixed_timestamp,
             "nonce": "n1",
         }
@@ -75,11 +75,11 @@ class TestActivationRoundtrip:
         assert data["authorized_until"] == "2026-12-31"
 
     def test_missing_code_returns_encrypted_error(
-        self, client, server_public_pem, fixed_timestamp
+        self, client, server_public_pem, fixed_timestamp, make_fingerprint
     ):
         request_dict = {
             "activation_code": "ghost",
-            "machine_code": "m",
+            "machine_code": make_fingerprint().to_dict(),
             "timestamp": fixed_timestamp,
             "nonce": "n",
         }
@@ -101,11 +101,11 @@ class TestActivationRoundtrip:
         assert data["result"] == "error"
 
     def test_response_is_not_plain_json(
-        self, client, server_public_pem, unused_code, fixed_timestamp
+        self, client, server_public_pem, unused_code, fixed_timestamp, make_fingerprint
     ):
         request_dict = {
             "activation_code": unused_code,
-            "machine_code": "m",
+            "machine_code": make_fingerprint().to_dict(),
             "timestamp": fixed_timestamp,
             "nonce": "n",
         }

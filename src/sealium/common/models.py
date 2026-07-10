@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import IntEnum
 
+from sealium.common.fingerprint import MachineFingerprint
+
 
 class ActivationStatus(IntEnum):
     """激活码状态。"""
@@ -17,12 +19,28 @@ class ActivationStatus(IntEnum):
     USED = 1  # 已激活
 
 
+def _machine_id_to_wire(mid: MachineFingerprint | None) -> dict | None:
+    """指纹 → wire dict（``None`` 透传）。"""
+    if mid is None:
+        return None
+    return mid.to_dict()
+
+
+def _machine_id_from_wire(data: object) -> MachineFingerprint | None:
+    """wire dict → 指纹（``None`` 透传）。非 dict 抛 ``ValueError``。"""
+    if data is None:
+        return None
+    if isinstance(data, dict):
+        return MachineFingerprint.from_dict(data)
+    raise ValueError("机器码必须是指纹对象（JSON 对象）")
+
+
 @dataclass
 class ActivationCode:
     """激活码记录（对应数据库一行）。"""
 
     activation_code: str
-    bound_machine_code: str | None = None
+    bound_machine_code: MachineFingerprint | None = None
     activated_at: datetime | None = None
     expires_at: datetime | None = None
     features: list[str] = field(default_factory=list)
@@ -43,7 +61,7 @@ class ActivationCode:
         """转换为字典，便于 JSON 序列化。"""
         return {
             "activation_code": self.activation_code,
-            "bound_machine_code": self.bound_machine_code,
+            "bound_machine_code": _machine_id_to_wire(self.bound_machine_code),
             "activated_at": self.activated_at.isoformat() if self.activated_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "features": self.features,
@@ -55,7 +73,7 @@ class ActivationCode:
         """从字典创建实例。"""
         return cls(
             activation_code=data["activation_code"],
-            bound_machine_code=data.get("bound_machine_code"),
+            bound_machine_code=_machine_id_from_wire(data.get("bound_machine_code")),
             activated_at=(
                 datetime.fromisoformat(data["activated_at"])
                 if data.get("activated_at")
@@ -76,14 +94,14 @@ class ActivationRequest:
     """客户端发送的激活请求（解密后的明文）。"""
 
     activation_code: str  # 用户输入的激活码
-    machine_code: str  # 机器码（硬件信息哈希）
+    machine_code: MachineFingerprint  # 机器码（硬件分量指纹）
     timestamp: int  # Unix 时间戳（秒）
     nonce: str  # 客户端随机数（十六进制字符串）
 
     def to_dict(self) -> dict:
         return {
             "activation_code": self.activation_code,
-            "machine_code": self.machine_code,
+            "machine_code": _machine_id_to_wire(self.machine_code),
             "timestamp": self.timestamp,
             "nonce": self.nonce,
         }
@@ -100,7 +118,7 @@ class ActivationRequest:
 
         try:
             code = data["activation_code"]
-            machine = data["machine_code"]
+            machine_raw = data["machine_code"]
             timestamp = data["timestamp"]
             nonce = data["nonce"]
         except KeyError as exc:
@@ -108,8 +126,12 @@ class ActivationRequest:
 
         if not (isinstance(code, str) and code):
             raise ValueError("activation_code 必须为非空字符串")
-        if not (isinstance(machine, str) and machine):
-            raise ValueError("machine_code 必须为非空字符串")
+        if not isinstance(machine_raw, dict):
+            raise ValueError("machine_code 必须是指纹对象")
+        try:
+            machine = MachineFingerprint.from_dict(machine_raw)
+        except ValueError as e:
+            raise ValueError(f"machine_code 非法: {e}") from e
         if not (isinstance(nonce, str) and nonce):
             raise ValueError("nonce 必须为非空字符串")
 

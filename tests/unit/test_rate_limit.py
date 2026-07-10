@@ -84,17 +84,18 @@ def _build_app_with_limiter(server_keypair, storage, limiter):
 
 
 class TestRateLimitIntegration:
-    def test_over_limit_returns_429(self, server_keypair, storage):
+    def test_over_limit_returns_429(self, server_keypair, storage, make_fingerprint):
         # 每窗口仅允许 2 次；第 3 次应被限流
         limiter = InMemoryRateLimiter(max_requests=2, window_seconds=60)
         app = _build_app_with_limiter(server_keypair, storage, limiter)
         pub = server_keypair.export_public_key().decode()
+        mc = make_fingerprint().to_dict()
 
         def post():
             km = ClientKeyManager(pub)
             req = {
                 "activation_code": "ghost",
-                "machine_code": "m",
+                "machine_code": mc,
                 "timestamp": int(datetime(2026, 1, 1).timestamp()),
                 "nonce": "n",
             }

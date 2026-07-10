@@ -22,6 +22,12 @@ import logging
 from datetime import datetime
 from typing import Callable, Optional
 
+from sealium.common.fingerprint import (
+    MachineFingerprint,
+    MachineIdPolicy,
+    matches,
+    to_storage,
+)
 from sealium.common.models import ActivationCode, ActivationRequest, ActivationResponse
 from sealium.server.database import ActivationCodeStorage
 from sealium.server.replay_guard import ReplayGuard
@@ -34,9 +40,10 @@ logger = logging.getLogger("sealium.server.activation")
 _CODE_UNAVAILABLE_MSG = "激活码无效或已被使用"
 
 
-def _short_hash(value: str) -> str:
+def _short_hash(value: str | MachineFingerprint) -> str:
     """用于日志的短哈希（截断），不记录原始激活码 / 机器码。"""
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+    s = value.canonical() if isinstance(value, MachineFingerprint) else str(value)
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()[:12]
 
 
 class ActivationService:
@@ -49,11 +56,13 @@ class ActivationService:
         timestamp_tolerance_seconds: int = 300,
         *,
         now_provider: Optional[NowProvider] = None,
+        machine_id_policy: Optional[MachineIdPolicy] = None,
     ) -> None:
         self._storage = storage
         self._replay_guard = replay_guard
         self._tolerance = timestamp_tolerance_seconds
         self._now: NowProvider = now_provider or datetime.now
+        self._policy = machine_id_policy or MachineIdPolicy.default()
 
     def process(self, request: ActivationRequest) -> ActivationResponse:
         """处理一次激活请求，返回（成功或错误的）响应。"""
@@ -85,7 +94,9 @@ class ActivationService:
 
         # 5. 已使用：同机幂等成功，异机拒绝（与“不存在”对外不可区分）
         if record.is_used():
-            if record.bound_machine_code == machine:
+            if record.bound_machine_code is not None and matches(
+                record.bound_machine_code, machine, self._policy
+            ):
                 logger.info(
                     "激活成功(幂等) code=%s machine=%s",
                     _short_hash(code),
@@ -108,7 +119,7 @@ class ActivationService:
 
         # 7. 原子绑定：条件 UPDATE 保证仅一台机器能赢得绑定（HIGH-001）
         try:
-            won = self._storage.bind_machine_code(code, machine, now)
+            won = self._storage.bind_machine_code(code, to_storage(machine), now)
         except Exception:
             # 数据库异常：对外通用提示，不回显原始异常（LOW-003），内部记录详情
             logger.exception("绑定数据库异常 code=%s", _short_hash(code))
@@ -126,7 +137,11 @@ class ActivationService:
 
         # 8. 绑定竞争失败：检查与抢绑之间被他人抢先。重读后判定。
         fresh = self._storage.get_by_code(code)
-        if fresh is not None and fresh.bound_machine_code == machine:
+        if (
+            fresh is not None
+            and fresh.bound_machine_code is not None
+            and matches(fresh.bound_machine_code, machine, self._policy)
+        ):
             # 极端时序：恰好是本机抢到（同机并发重试），按幂等成功
             return ActivationResponse.success(
                 self._authorized_until(record), record.features, nonce

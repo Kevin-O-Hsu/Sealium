@@ -16,6 +16,7 @@ import requests
 
 from sealium.common import constants
 from sealium.common.exceptions import ActivationError  # 重新导出，保持导入路径兼容
+from sealium.common.fingerprint import MachineFingerprint
 from sealium.common.machine_code import generate_machine_code
 from sealium.common.models import ActivationRequest, ActivationResponse
 from sealium.common.time_source import get_timestamp_from_api
@@ -41,7 +42,7 @@ class Activator:
         server_public_key_pem: str,
         *,
         timestamp_provider: Callable[[], int] = get_timestamp_from_api,
-        machine_code_provider: Callable[[], str] = generate_machine_code,
+        machine_code_provider: Callable[[], MachineFingerprint] = generate_machine_code,
         http_poster: HttpPoster = _default_post,
         key_manager: Optional[ClientKeyManager] = None,
         request_timeout: int = constants.REQUEST_TIMEOUT_SECONDS,
@@ -50,7 +51,7 @@ class Activator:
         :param server_url: 服务器激活接口 URL。
         :param server_public_key_pem: 服务端公钥 PEM 字符串。
         :param timestamp_provider: 时间戳来源（默认远程权威 API）。
-        :param machine_code_provider: 机器码来源（默认 Windows WMI 指纹）。
+        :param machine_code_provider: 机器码来源（默认硬件分量指纹）。
         :param http_poster: HTTP 发送器（默认 requests）。
         :param key_manager: 自定义密钥管理器；为 ``None`` 时按公钥新建。
         :param request_timeout: HTTP 超时（秒）。

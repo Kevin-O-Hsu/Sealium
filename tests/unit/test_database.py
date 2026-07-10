@@ -7,6 +7,7 @@ from datetime import datetime
 
 import pytest
 
+from sealium.common.fingerprint import to_storage
 from sealium.common.models import ActivationCode, ActivationStatus
 from sealium.server.database import ActivationCodeStorage, SQLiteDatabase
 
@@ -87,12 +88,13 @@ class TestActivationCodeStorage:
         storage.update_status("c", ActivationStatus.USED)
         assert storage.get_by_code("c").status == ActivationStatus.USED
 
-    def test_bind_machine_code_sets_fields(self, storage: ActivationCodeStorage):
+    def test_bind_machine_code_sets_fields(self, storage: ActivationCodeStorage, make_fingerprint):
         storage.create(ActivationCode(activation_code="c"))
         when = datetime(2026, 1, 1, 10, 0, 0)
-        storage.bind_machine_code("c", "mc", when)
+        fp = make_fingerprint("mc")
+        storage.bind_machine_code("c", to_storage(fp), when)
         got = storage.get_by_code("c")
-        assert got.bound_machine_code == "mc"
+        assert got.bound_machine_code == fp
         assert got.activated_at == when
         assert got.status == ActivationStatus.USED
 

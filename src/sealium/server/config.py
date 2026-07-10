@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Optional
 
+from sealium.common.fingerprint import MachineIdPolicy
+
 
 @dataclass
 class ServerConfig:
@@ -38,6 +40,7 @@ class ServerConfig:
     rate_limit_max_requests: int = 60
     rate_limit_window_seconds: int = 60
     server_private_key_passphrase: Optional[str] = None
+    machine_id_policy: MachineIdPolicy = field(default_factory=MachineIdPolicy.default)
 
     @classmethod
     def from_env(cls, env: Optional[Mapping[str, str]] = None) -> ServerConfig:
@@ -79,6 +82,11 @@ class ServerConfig:
             # 为空则维持明文私钥（向后兼容）。
             server_private_key_passphrase=(
                 get("SERVER_PRIVATE_KEY_PASSPHRASE", "") or None
+            ),
+            machine_id_policy=MachineIdPolicy(
+                threshold=float(get("MACHINE_ID_THRESHOLD", "0.70")),
+                core_min=int(get("MACHINE_ID_CORE_MIN", "3")),
+                spoof_max=float(get("MACHINE_ID_SPOOF_MAX", "0.5")),
             ),
         )
 

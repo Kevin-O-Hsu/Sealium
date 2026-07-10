@@ -31,7 +31,7 @@ def _post(client, server_public_pem: str, request_dict: dict):
 
 
 class TestFullActivationFlow:
-    def test_generate_activate_verify_reactivate(self, client, make_activator, storage):
+    def test_generate_activate_verify_reactivate(self, client, make_activator, storage, make_fingerprint):
         """生成码 -> 首次激活 -> DB 绑定 -> 同机重激活幂等成功。"""
         code = generate_activation_codes(
             1, features=["pro", "ent"], expires_at=datetime(2026, 12, 31),
@@ -47,7 +47,7 @@ class TestFullActivationFlow:
 
         stored = storage.get_by_code(code)
         assert stored.status == ActivationStatus.USED
-        assert stored.bound_machine_code == "deadbeef" * 8
+        assert stored.bound_machine_code == make_fingerprint()
 
         # 同机重激活：幂等成功
         second = activator.activate(code)
@@ -55,29 +55,43 @@ class TestFullActivationFlow:
         assert second.authorized_until == first.authorized_until
 
     def test_different_machine_rejected_after_bind(
-        self, client, make_activator, storage
+        self, client, make_activator, storage, make_fingerprint
     ):
         """机器 A 激活后，机器 B 使用同一码应被拒。"""
         code = generate_activation_codes(1, db_path=storage.db.db_path)[0]
 
-        activator_a = make_activator(client, machine_code="machineA")
+        activator_a = make_activator(client, machine_code=make_fingerprint("machineA"))
         assert activator_a.activate(code).result == "success"
 
-        activator_b = make_activator(client, machine_code="machineB")
+        activator_b = make_activator(client, machine_code=make_fingerprint("machineB"))
         resp = activator_b.activate(code)
         assert resp.result == "error"
         # 与“码不存在”对外不可区分（GRAY-001）
         assert "已被使用" in resp.error_msg
 
-    def test_multiple_codes_one_machine(self, client, make_activator, storage):
+    def test_same_machine_peripheral_drift_accepted(
+        self, client, make_activator, storage, make_fingerprint
+    ):
+        """核心相同、外围（磁盘/MAC）变化的指纹仍应判为同机（阈值容错）。"""
+        code = generate_activation_codes(1, db_path=storage.db.db_path)[0]
+
+        activator_a = make_activator(client, machine_code=make_fingerprint("host1"))
+        assert activator_a.activate(code).result == "success"
+
+        # 核心相同（seed host1）、外围漂移（drift=True）→ 仍判同机 → 幂等成功
+        activator_a2 = make_activator(client, machine_code=make_fingerprint("host1", drift=True))
+        resp = activator_a2.activate(code)
+        assert resp.result == "success"
+
+    def test_multiple_codes_one_machine(self, client, make_activator, storage, make_fingerprint):
         """同一台机器可激活多个不同激活码。"""
         codes = generate_activation_codes(3, db_path=storage.db.db_path)
         activator = make_activator(client)
         for code in codes:
             assert activator.activate(code).result == "success"
-        # 全部绑定同一机器码
+        # 全部绑定同一机器指纹
         bound = {storage.get_by_code(c).bound_machine_code for c in codes}
-        assert bound == {"deadbeef" * 8}
+        assert bound == {make_fingerprint()}
 
     def test_permanent_code_authorized_forever(self, client, make_activator, storage):
         """无 expires_at 的码返回永久授权。"""
@@ -89,12 +103,12 @@ class TestFullActivationFlow:
 
 class TestSecurityMechanisms:
     def test_replay_same_nonce_rejected(
-        self, client, server_public_pem, storage, unused_code, fixed_timestamp
+        self, client, server_public_pem, storage, unused_code, fixed_timestamp, make_fingerprint
     ):
         """同一 (code, nonce) 第二次提交应被防重放拦截。"""
         request = {
             "activation_code": unused_code,
-            "machine_code": "m",
+            "machine_code": make_fingerprint().to_dict(),
             "timestamp": fixed_timestamp,
             "nonce": "dup_nonce",
         }
@@ -107,12 +121,12 @@ class TestSecurityMechanisms:
         assert "重复" in data["error_msg"]
 
     def test_expired_timestamp_rejected(
-        self, client, server_public_pem, unused_code, fixed_timestamp
+        self, client, server_public_pem, unused_code, fixed_timestamp, make_fingerprint
     ):
         """时间戳超出容忍窗口应被拒。"""
         request = {
             "activation_code": unused_code,
-            "machine_code": "m",
+            "machine_code": make_fingerprint().to_dict(),
             "timestamp": fixed_timestamp - 99999,
             "nonce": "n",
         }

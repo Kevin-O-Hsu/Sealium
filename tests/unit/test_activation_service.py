@@ -8,6 +8,7 @@ from datetime import datetime
 
 import pytest
 
+from sealium.common.fingerprint import Component, MachineFingerprint
 from sealium.common.models import ActivationCode, ActivationRequest, ActivationStatus
 from sealium.server.activation_service import ActivationService
 from sealium.server.replay_guard import ReplayGuard
@@ -16,9 +17,26 @@ NOW = datetime(2026, 1, 1, 12, 0, 0)
 NOW_TS = int(NOW.timestamp())
 
 
-def make_request(code="c", machine="m", timestamp=NOW_TS, nonce="n") -> ActivationRequest:
+def _fp(seed: str = "m", *, spoof: float = 0.0, drift: bool = False) -> MachineFingerprint:
+    """构造测试指纹：相同 seed → 核心分量相同；drift=True → 外围分量不同。"""
+    core = f"core-{seed}"
+    periph = f"periph-drift-{seed}" if drift else f"periph-{seed}"
+    return MachineFingerprint(
+        components=(
+            Component("cpu", core, True),
+            Component("board", core, True),
+            Component("bios", core, True),
+            Component("system_uuid", core, True),
+            Component("disk", periph, False),
+            Component("mac", periph, False),
+        ),
+        spoof_score=spoof,
+    )
+
+
+def make_request(code="c", machine: MachineFingerprint | None = None, timestamp=NOW_TS, nonce="n") -> ActivationRequest:
     return ActivationRequest(
-        activation_code=code, machine_code=machine, timestamp=timestamp, nonce=nonce
+        activation_code=code, machine_code=machine or _fp(), timestamp=timestamp, nonce=nonce
     )
 
 
@@ -35,7 +53,7 @@ class TestFormatValidation:
 
     def test_non_string_code(self, service: ActivationService):
         req = ActivationRequest(
-            activation_code=123, machine_code="m", timestamp=NOW_TS, nonce="n"
+            activation_code=123, machine_code=_fp(), timestamp=NOW_TS, nonce="n"
         )
         resp = service.process(req)
         assert resp.result == "error"
@@ -82,13 +100,13 @@ class TestUsedCodeBranches:
         storage.create(
             ActivationCode(
                 activation_code="c",
-                bound_machine_code="m",
+                bound_machine_code=_fp("m"),
                 status=ActivationStatus.USED,
                 features=["pro"],
                 expires_at=datetime(2026, 12, 31),
             )
         )
-        resp = service.process(make_request(machine="m"))
+        resp = service.process(make_request(machine=_fp("m")))
         assert resp.result == "success"
         assert resp.authorized_until == "2026-12-31"
         assert resp.features == ["pro"]
@@ -98,11 +116,11 @@ class TestUsedCodeBranches:
         storage.create(
             ActivationCode(
                 activation_code="c",
-                bound_machine_code="m",
+                bound_machine_code=_fp("m"),
                 status=ActivationStatus.USED,
             )
         )
-        resp = service.process(make_request(machine="other"))
+        resp = service.process(make_request(machine=_fp("other")))
         assert resp.result == "error"
         # 与“码不存在”对外不可区分（GRAY-001）
         assert "已被使用" in resp.error_msg
@@ -127,7 +145,7 @@ class TestFreshActivation:
                 expires_at=datetime(2026, 12, 31),
             )
         )
-        resp = service.process(make_request(machine="mymc", nonce="client-nonce"))
+        resp = service.process(make_request(machine=_fp("mymc"), nonce="client-nonce"))
         assert resp.result == "success"
         assert resp.authorized_until == "2026-12-31"
         assert resp.features == ["pro"]
@@ -135,7 +153,7 @@ class TestFreshActivation:
 
         stored = storage.get_by_code("c")
         assert stored.status == ActivationStatus.USED
-        assert stored.bound_machine_code == "mymc"
+        assert stored.bound_machine_code == _fp("mymc")
         assert stored.activated_at is not None
 
     def test_permanent_authorization(self, service: ActivationService, storage):
@@ -177,7 +195,7 @@ class TestConcurrentBindingAtomicity:
         def worker(i: int):
             req = ActivationRequest(
                 activation_code="shared",
-                machine_code=f"machine{i}",
+                machine_code=_fp(f"machine{i}"),
                 timestamp=NOW_TS,
                 nonce=f"nonce{i}",
             )
@@ -192,7 +210,8 @@ class TestConcurrentBindingAtomicity:
 
         successes = results.count("success")
         assert successes == 1, f"期望仅 1 台成功，实际 {successes} 台（竞态未修复）"
-        # 其余均被拒为“不可用”
+        # 其余均被拒为“不可用”；赢家绑定的指纹必为其中之一
         bound = storage.get_by_code("shared")
         assert bound.status == ActivationStatus.USED
-        assert bound.bound_machine_code.startswith("machine")
+        possible = {_fp(f"machine{i}") for i in range(n)}
+        assert bound.bound_machine_code in possible

@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from sealium.common.fingerprint import MachineFingerprint, to_storage
 from sealium.common.models import ActivationCode, ActivationStatus
 
 
@@ -156,10 +157,22 @@ class ActivationCodeStorage:
         return datetime.fromisoformat(s) if s is not None else None
 
     @staticmethod
+    def _encode_bound(mid: MachineFingerprint | None) -> str | None:
+        """指纹 → DB TEXT（``None`` 透传）。"""
+        return None if mid is None else to_storage(mid)
+
+    @staticmethod
+    def _decode_bound(raw: str | None) -> MachineFingerprint | None:
+        """DB TEXT → 指纹（``None`` 透传）。"""
+        if raw is None:
+            return None
+        return MachineFingerprint.from_dict(json.loads(raw))
+
+    @staticmethod
     def _row_to_model(row: dict[str, Any]) -> ActivationCode:
         return ActivationCode(
             activation_code=row["code"],
-            bound_machine_code=row["bound_machine_code"],
+            bound_machine_code=ActivationCodeStorage._decode_bound(row["bound_machine_code"]),
             activated_at=ActivationCodeStorage._str_to_datetime(row["activated_at"]),
             expires_at=ActivationCodeStorage._str_to_datetime(row["expires_at"]),
             features=ActivationCodeStorage._deserialize_features(row["features"]),
@@ -178,7 +191,7 @@ class ActivationCodeStorage:
                 """,
                 (
                     activation_code.activation_code,
-                    activation_code.bound_machine_code,
+                    ActivationCodeStorage._encode_bound(activation_code.bound_machine_code),
                     self._datetime_to_str(activation_code.activated_at),
                     self._datetime_to_str(activation_code.expires_at),
                     self._serialize_features(activation_code.features),

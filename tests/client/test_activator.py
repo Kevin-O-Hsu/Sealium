@@ -11,7 +11,7 @@ from sealium.client.activator import Activator, ActivationError
 from sealium.common.models import ActivationStatus
 
 
-def test_activate_success(client, make_activator, storage, unused_code):
+def test_activate_success(client, make_activator, storage, unused_code, make_fingerprint):
     activator = make_activator(client)
     resp = activator.activate(unused_code)
     assert resp.result == "success"
@@ -21,7 +21,7 @@ def test_activate_success(client, make_activator, storage, unused_code):
 
     stored = storage.get_by_code(unused_code)
     assert stored.status == ActivationStatus.USED
-    assert stored.bound_machine_code == "deadbeef" * 8
+    assert stored.bound_machine_code == make_fingerprint()
 
 
 def test_nonce_mismatch_raises(client, make_activator, unused_code, monkeypatch):
@@ -35,7 +35,7 @@ def test_nonce_mismatch_raises(client, make_activator, unused_code, monkeypatch)
     assert "nonce" in str(exc.value).lower()
 
 
-def test_timestamp_provider_failure(server_public_pem):
+def test_timestamp_provider_failure(server_public_pem, make_fingerprint):
     def no_time():
         raise RuntimeError("no time")
 
@@ -45,7 +45,7 @@ def test_timestamp_provider_failure(server_public_pem):
         "http://localhost/v1/activation",
         server_public_pem,
         timestamp_provider=no_time,
-        machine_code_provider=lambda: "m",
+        machine_code_provider=lambda: make_fingerprint(),
     )
     with pytest.raises(ActivationError) as exc:
         activator.activate("any")
@@ -81,12 +81,12 @@ def test_encrypt_request_failure(client, make_activator, unused_code, monkeypatc
     assert "加密请求" in str(exc.value)
 
 
-def test_network_failure(server_public_pem):
+def test_network_failure(server_public_pem, make_fingerprint):
     activator = Activator(
         "http://127.0.0.1:9/v1/activation",
         server_public_pem,
         timestamp_provider=lambda: 1700000000,
-        machine_code_provider=lambda: "m",
+        machine_code_provider=lambda: make_fingerprint(),
     )
     with pytest.raises(ActivationError) as exc:
         activator.activate("any")
