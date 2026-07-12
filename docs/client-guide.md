@@ -130,7 +130,84 @@ activator = Activator(..., machine_code_provider=my_provider)
 注意：自定义指纹的 `Component.value` 是逐项哈希，必须与服务端 bound 的指纹用**相同的 pepper**
 计算才能匹配（pepper 由客户端打包时决定，见 [硬件绑定原理](hardware-binding.md)）。
 
-## 9. 安全建议
+## 9. 配置客户端硬件指纹 pepper（分发前必做）
+
+客户端采集硬件指纹时，每类硬件原始值都按 `sha256(category + pepper + raw)` 逐项哈希
+（原理见 [硬件绑定](hardware-binding.md)）。这个 pepper **默认是源码里的公开常量**
+`"sealium-v1-hardware-fingerprint-pepper"`——任何人都能从 PyPI / 源码看到。**不改它，
+你的发行就和所有用默认值的发行指纹互通，彩虹表 / 跨发行碰撞防护形同虚设。** 每个发行
+**必须**在分发前设自己的私有 pepper。
+
+### 它是什么、怎么读
+
+- pepper 是**运行时环境变量** `MACHINE_ID_PEPPER`：客户端进程启动时由
+  `os.environ.get("MACHINE_ID_PEPPER", <内置默认>)` 读取**一次**并固化进模块。
+- **时机铁律**：必须在 Python 解释器启动、`import sealium` 之前，该变量就已存在于进程
+  环境块。**import 之后再设环境变量无效**（模块属性已求值，实测不会更新）。
+- 客户端整条激活链路都读这一个变量（采集层不传显式 pepper，直接走模块默认值）。
+- **pepper 纯属客户端侧**：服务端只比对客户端上报的哈希分量，**不读、也不需要知道**
+  你的 pepper。它的意义仅在于让"你的发行"的指纹与别人不同（域分隔）。
+
+> ⚠️ **别和另一个 pepper 搞混**：`MACHINE_ID_PEPPER`（本节，客户端硬件指纹）与
+> `SEALIUM_SECURITY__CODE_HASH_PEPPER`（[服务端激活码存储哈希](configuration.md#9-客户端配置)）
+> 是**两个完全不同的东西**——作用域、读取方、默认值都不同。**不要**把它们当成
+> "客户端服务端共用一个 pepper"。
+
+### 配置方式（任选其一，不限定工具）
+
+**方式 A — 改源码默认值（最可靠，与封装工具解耦，推荐）**
+
+把 `src/sealium/common/fingerprint.py` 里这行的默认字符串改成你的私有值，再打包进 exe：
+
+```python
+# 改前
+_PEPPER = os.environ.get("MACHINE_ID_PEPPER", "sealium-v1-hardware-fingerprint-pepper")
+# 改后（换成你的私有随机串）
+_PEPPER = os.environ.get("MACHINE_ID_PEPPER", "你的私有随机串")
+```
+
+pepper 随二进制分发，**完全不依赖运行时环境变量机制**——Nuitka / Enigma Virtual Box /
+PyInstaller 任何打包工具都适用。代价：升级 sealium 后需重新 patch 这一行。
+
+**方式 B — 进程启动前注入环境变量**
+
+在主 exe 启动前把变量塞进进程环境块，例如启动器（`.bat` / 小 C 程序 / NSIS·Inno 安装器）：
+
+```bat
+:: launcher.bat —— 在主程序启动前设好环境变量
+set MACHINE_ID_PEPPER=你的私有随机串
+start "" your_app.exe
+```
+
+或封装工具自带的"注入进程环境变量"能力——**前提是它确实提供这个功能**（见下方注意）。
+
+> **关于 Enigma Virtual Box**：EVB（免费版）的核心能力是**文件系统 + 注册表虚拟化**
+> （把 exe + 依赖打成单文件），**没有可靠证据表明它内置"打包时注入进程环境变量"的功能**。
+> 而注册表虚拟化也**不能**可靠地变成进程环境变量——进程环境变量由父进程在 `CreateProcess`
+> 时传入，不是程序自己读注册表得来的。因此用 EVB 封装时**强烈建议走方式 A**：把 pepper
+> 烧进二进制，绕开环境变量的不确定性。用的是功能更全的 Enigma Protector 时，同样优先方式 A。
+
+### 部署后不可变
+
+pepper 一旦被任何客户端用来生成过指纹、并被服务端绑定，**绝不能再改**：改它 = 所有已
+绑定记录的哈希失配 = **全员强制重新激活**。选定一个值就永久保持。
+
+### 自测：确认 pepper 真的生效
+
+无论用哪种方式，配置 / 打包后务必对比——同一输入、不同 pepper，输出必须不同：
+
+```bash
+# 终端1：默认 pepper
+python -c "from sealium.common.fingerprint import hash_component as h; print(h('cpu','TEST123'))"
+# 终端2：你的私有 pepper（新进程，启动前注入）
+MACHINE_ID_PEPPER=你的私有值 python -c "from sealium.common.fingerprint import hash_component as h; print(h('cpu','TEST123'))"
+# Windows cmd 等价： set MACHINE_ID_PEPPER=你的私有值 && python -c "..."
+```
+
+两次输出**不同** → pepper 生效；**相同** → 仍在用公开默认值，回头检查注入是否在
+`import sealium` 之前完成。
+
+## 10. 安全建议
 
 - **公钥随客户端分发，但定期轮换**：更换服务端密钥对后，分发新公钥，旧客户端在升级公钥前无法激活。
 - **不要把激活服务暴露公网**：置于反向代理后，启用 TLS（见 [服务端部署 §5](server-guide.md#5-反向代理与-tls生产必备)）。

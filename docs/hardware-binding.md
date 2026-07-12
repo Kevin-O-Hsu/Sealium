@@ -105,7 +105,7 @@ class MachineFingerprint:
 硬件仍认同一台。
 
 **为什么用固定 pepper、绝不用随机盐**：随机盐每次运行不同 → 同一台机器两次激活产生不同
-`value` → 既破坏幂等（重激活失败）又破坏服务端比对。pepper 是客户端编译期常量（可由
+`value` → 既破坏幂等（重激活失败）又破坏服务端比对。pepper 是客户端运行时读取的固定值（默认为内置常量，可由
 `MACHINE_ID_PEPPER` 环境变量覆盖以便打包定制），**部署后不可变**。
 
 ## 匹配算法 —— `matches(bound, incoming, policy)`
