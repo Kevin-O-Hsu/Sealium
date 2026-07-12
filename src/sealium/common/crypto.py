@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import secrets
 from typing import Optional, Union
 
@@ -192,3 +194,19 @@ class AESEncryptor:
             raise CryptoError(f"tag 长度必须为 {AES_GCM_TAG_SIZE} 字节")
         aesgcm = AESGCM(key)
         return aesgcm.decrypt(nonce, ciphertext + tag, associated_data)
+
+
+def hash_activation_code(code: str, pepper: str) -> str:
+    """激活码索引哈希：HMAC-SHA256(code, pepper)（MEDIUM-002）。
+
+    激活码本身为 128 位高熵随机串，验证时只需相等比较，故适合哈希存储——
+    DB 文件泄露时无法直接读出可用码，把"读取"降级回"预像不可行"。
+    HMAC 提供域分隔（per-deployment pepper），查询性能不变（仍走主键索引）。
+
+    :param code: 明文激活码（仅生成时颁发一次，绝不入库）。
+    :param pepper: 部署私有盐；未配置时用 :data:`CODE_HASH_PEPPER_DEFAULT`。
+    :return: 64 位十六进制摘要，作为 DB 主键 ``code_hash``。
+    """
+    return hmac.new(
+        pepper.encode("utf-8"), code.encode("utf-8"), hashlib.sha256
+    ).hexdigest()

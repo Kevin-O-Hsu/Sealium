@@ -33,6 +33,10 @@ from typing import Optional
 # 仅客户端读它；服务端 import 本模块但不调用 hash_component，pepper 对服务端无意义。
 _PEPPER = os.environ.get("MACHINE_ID_PEPPER", "sealium-v1-hardware-fingerprint-pepper")
 
+# 指纹分量数量上限（MEDIUM-001）：合法指纹分量 < 10（见 DEFAULT_WEIGHTS 的 9 类），
+# 设 64 给足余量，超限拒绝解析以防 components 数组塞海量分量触发内存耗尽。
+MAX_COMPONENTS: int = 64
+
 
 def hash_component(category: str, raw: str, *, pepper: Optional[str] = None) -> str:
     """
@@ -150,6 +154,8 @@ class MachineFingerprint:
         raw_components = d.get("components")
         if not isinstance(raw_components, list):
             raise ValueError("指纹 components 必须是数组")
+        if len(raw_components) > MAX_COMPONENTS:
+            raise ValueError(f"分量数超上限 {MAX_COMPONENTS}")
         components = tuple(Component.from_dict(c) for c in raw_components)
         if not components:
             raise ValueError("指纹至少需要一个分量")

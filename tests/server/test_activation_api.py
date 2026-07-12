@@ -52,6 +52,15 @@ class TestHealthAndErrors:
         resp = client.post("/v1/activation", content=packet)
         assert resp.status_code == 400
 
+    def test_oversized_body_returns_413(self, client):
+        """MEDIUM-001: 超过 64KB 上限的请求体直接 413，防内存耗尽 DoS。"""
+        from sealium.common.constants import MAX_ACTIVATION_BODY_BYTES
+
+        big = b"x" * (MAX_ACTIVATION_BODY_BYTES + 1)
+        resp = client.post("/v1/activation", content=big)
+        assert resp.status_code == 413
+        assert resp.content == b""
+
 
 class TestActivationRoundtrip:
     def test_successful_activation(

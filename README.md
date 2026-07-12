@@ -125,8 +125,10 @@ python -m sealium.scripts.generate_activation_codes --count 10 --features pro
 python -m sealium.server.run
 ```
 
-Sensible defaults work out of the box (binds `0.0.0.0:8000`, data in `./data/`). To
-customize, generate a config template and edit:
+Sensible defaults work out of the box (binds `127.0.0.1:8000`, data in `./data/`).
+**Production runs on Linux behind a reverse proxy (nginx, etc.)** — the default loopback
+bind is proxy-friendly; set `[server] host = "0.0.0.0"` only when the proxy runs on another
+machine or in a container. To customize, generate a config template and edit:
 
 ```bash
 python -m sealium.server.config_cli init     # writes sealium.toml in the current dir
@@ -154,6 +156,11 @@ pip install -e ".[dev]"
 pytest
 ```
 
+For **reproducible installs**, pinned lock files (`requirements.txt` /
+`requirements-dev.txt`) are committed and used by CI. Regenerate with
+`pip-compile --generate-hashes requirements.in` (and `requirements-dev.in`); the `.in`
+files are the source of truth, `pyproject.toml` is the dependency metadata authority.
+
 The test suite runs fully offline: the FastAPI server is driven in-process via
 `TestClient`, the database is a throwaway SQLite file, hardware collection and the
 timestamp source are injected — no live server, network, or real hardware required.
@@ -162,20 +169,28 @@ timestamp source are injected — no live server, network, or real hardware requ
 
 ## 🛡️ Deployment Hardening
 
-Sealium is designed to run **behind a reverse proxy / firewall**, not exposed bare to
-the public network:
+**The default and recommended deployment is Linux + a reverse proxy (nginx, etc.).** The
+server is designed to run **behind a reverse proxy / firewall**, never exposed bare to the
+public network. (The server only *compares* fingerprints — it does not collect hardware —
+so it runs fine on Linux; only the *client* must be on Windows for native collection.)
 
-- **Bind address** — defaults to `0.0.0.0`; restrict via `[server] host = "127.0.0.1"` in
-  `sealium.toml` (or `SEALIUM_SERVER__HOST`) when running co-located with the proxy.
+- **Bind address** — defaults to `127.0.0.1` (loopback only, safe default). When the
+  reverse proxy runs on the same machine it forwards to loopback directly; when the proxy
+  runs on another machine or in a container, set `[server] host = "0.0.0.0"` (or an
+  internal IP) in `sealium.toml` / `SEALIUM_SERVER__HOST`, and keep it behind the proxy.
 - **TLS** — terminate TLS at the reverse proxy (with HSTS) to hide metadata.
 - **Rate limiting** — enabled by default (`[rate_limit]`, 60 req / 60 s per IP).
 - **Docs** — `/docs`, `/redoc`, `/openapi.json` are auto-disabled when `[server] debug = false`.
 - **Config** — `sealium.toml` + `SEALIUM_*` env / `.env`; private-key passphrase stored as
   `SecretStr` (never echoed). Validate with `python -m sealium.server.config_cli check`.
-- **Key material** — `data/server_private.pem` and the SQLite DB are created with
-  `0600` permissions; the private key can be passphrase-encrypted.
-- **Multi-worker caveat** — the in-memory replay guard and rate limiter are
-  per-process; for cross-worker consistency, inject a shared store (Redis).
+- **Key material** — `data/server_private.pem` and the SQLite DB are created with `0600`
+  permissions (enforced on Linux); the private key can be passphrase-encrypted. **On
+  Windows** `0600` does not apply (NTFS ACLs differ) — since the server deploys on Linux by
+  default this is a non-issue; if you must run the server on Windows, encrypt the private
+  key with a passphrase (see [docs/server-guide.md](docs/server-guide.md)).
+- **Multi-worker** — the in-memory replay guard and rate limiter are per-process; running
+  more than one worker **requires** a shared store (Redis) for correct replay protection
+  and rate limiting. Single-process (the default) needs no extra setup.
 
 See [docs/security.md](docs/security.md) for the full threat model and hardening checklist.
 

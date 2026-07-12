@@ -1,0 +1,11 @@
+# 运行时直接依赖（MEDIUM-004）。
+# 与 pyproject.toml [project] dependencies 保持对齐——pyproject 是依赖元数据权威，
+# 本文件是锁文件权威输入。改动依赖时两处同步更新，再重新 pip-compile。
+# 生成锁定版：pip-compile --generate-hashes --resolver=backtracking requirements.in -o requirements.txt
+cryptography>=42
+requests>=2.28
+fastapi>=0.100
+pydantic-settings>=2.0
+uvicorn>=0.20
+tomli; python_version < "3.11"
+wmi; platform_system == "Windows"

@@ -4,6 +4,11 @@
 
 ## 1. 安装
 
+> **默认与推荐部署方式：Linux + 反向代理（nginx 等）。** 服务端进程为明文 HTTP、`0600`
+> 文件权限按 Linux 语义保证，设计为置于反向代理 + TLS 之后；默认仅监听回环 `127.0.0.1`。
+> 服务端只在指纹比对（不采集硬件），故 Linux 部署完全可用；仅客户端采集需 Windows。
+> Windows 作服务端部署的差异见 §5.1。
+
 ```bash
 pip install sealium
 ```
@@ -27,9 +32,10 @@ python -m sealium.scripts.generate_keys \
 
 ```bash
 python -m sealium.scripts.generate_keys --passphrase "a-long-random-passphrase"
-# 启动时通过环境变量（或 .env）提供同名口令：
-export SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE="a-long-random-passphrase"
 ```
+
+启动时经 `.env` 或环境变量 `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE` 提供同名口令；口令、
+激活码哈希 pepper 等敏感项的完整配置见 [配置参考 §4](configuration.md#4-敏感项与-env-配置)。
 
 > 不提供 `--passphrase` 则私钥明文存储（向后兼容，不推荐用于生产）。
 
@@ -81,39 +87,25 @@ python -m sealium.scripts.generate_activation_codes --count 10
 python -m sealium.server.run
 ```
 
-默认监听 `0.0.0.0:8000`，数据落在当前目录 `./data/`（自动创建）。**设计上置于反向代理/
-防火墙之后**，不要裸暴露公网。
+默认监听 `127.0.0.1:8000`（仅回环），数据落在当前目录 `./data/`（自动创建）。**设计上置于
+反向代理/防火墙之后**，不要裸暴露公网。同机反代直接转发到回环即可；反代跨机/容器时设
+`host = "0.0.0.0"`（见 §5）。
 
 健康检查：`GET /health` → `{"status":"ok","service":"activation"}`。
 激活接口：`POST /v1/activation`（`application/octet-stream`，见 [协议](protocol.md)）。
 
-### 需要覆盖默认值时（可选）
+### 需要覆盖默认值时
 
-生成配置模板到当前目录，按需编辑：
+一键生成全套配置模板（结构化配置 + 敏感项），编辑后自检：
 
 ```bash
-python -m sealium.server.config_cli init      # 生成 sealium.toml 模板
+python -m sealium.server.config_cli init      # 生成 sealium.toml + .env（当前目录）
 python -m sealium.server.config_cli check     # 自检
 python -m sealium.server.run
 ```
 
-也可用环境变量覆盖单项（`SEALIUM_<SECTION>__<KEY>`）：
-
-```bash
-SEALIUM_SERVER__PORT=9000 python -m sealium.server.run
-# 或指定配置文件：
-python -m sealium.server.run --config /etc/sealium/sealium.toml
-```
-
-敏感项（私钥口令）只用环境变量，**不写进配置文件**：
-
-```bash
-export SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE="a-long-random-passphrase"
-```
-
-默认 `[server] host = "0.0.0.0"`；生产建议绑定本机（`SEALIUM_SERVER__HOST=127.0.0.1`
-或 `sealium.toml` 里 `[server] host = "127.0.0.1"`）。完整配置项见
-[配置参考](configuration.md)。
+**所有字段、`.env`、环境变量、场景配方（生产加固 / 容器 / 多 worker + Redis）的完整说明见
+[配置参考](configuration.md)。** 本篇聚焦部署流程，不重复字段细节。
 
 ## 5. 反向代理与 TLS（生产必备）
 
@@ -136,7 +128,20 @@ server {
 }
 ```
 
-并把服务端绑定到本机：在 `sealium.toml` 设 `[server] host = "127.0.0.1"`（或环境变量 `SEALIUM_SERVER__HOST=127.0.0.1`）。
+服务端默认已绑定回环 `127.0.0.1`（与上面 `proxy_pass http://127.0.0.1:8000` 对齐），同机反代
+无需改。仅当反向代理在另一台机器或容器内时，才设 `[server] host = "0.0.0.0"`（或内网 IP），
+并确保该端口只对反代可达。
+
+### 5.1 Windows 服务端部署差异（非默认）
+
+Sealium 服务端默认部署在 Linux。若必须在 Windows 上运行服务端，注意以下差异：
+
+- **文件权限**：`os.chmod(0600)` 在 NTFS 上不生效（只切换只读位，不约束 ACL）。私钥与
+  SQLite 文件对同机其他用户默认可读——务必用 `icacls` 收紧 ACL，或更简单：**给私钥加口令
+  加密**（`--passphrase` + `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE`），这是 Windows 上唯一
+  可靠的私钥保护。
+- **激活码已哈希存储**（MEDIUM-002）：SQLite 文件即便被读出，也无法直接获得可用激活码。
+- **服务化**：用 NSSM/Windows Service 包装 `python -m sealium.server.run`，而非裸控制台。
 
 ## 6. 数据库
 
@@ -149,10 +154,10 @@ server {
 
 `uvicorn --workers N` / gunicorn 多进程时：
 - **防重放缓存**（`replay_guard`）和**限流**（`rate_limit`）都是**进程内**计数，各 worker 独立。
-- 若需全局一致（精确防重放、精确限流），把 `create_app` 的 `replay_guard` / `rate_limiter`
-  注入为共享后端实现（如 Redis）。
+- **多 worker 必须**注入共享后端（如 Redis）实现 `create_app` 的 `replay_guard` / `rate_limiter`，
+  否则防重放与限流都会因进程隔离而弱化（攻击者轮询命中不同 worker 即可绕过单进程额度）。
 
-单实例或弱一致场景下，进程内实现已足够。
+单进程（默认）下进程内实现已足够，无需额外组件。
 
 ## 8. 调试
 

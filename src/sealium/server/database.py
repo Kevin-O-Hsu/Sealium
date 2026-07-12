@@ -15,8 +15,10 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
+from sealium.common.constants import CODE_HASH_PEPPER_DEFAULT
+from sealium.common.crypto import hash_activation_code
 from sealium.common.fingerprint import MachineFingerprint, to_storage
 from sealium.common.models import ActivationCode, ActivationStatus
 
@@ -108,7 +110,7 @@ class SQLiteDatabase:
             self.execute(
                 """
                 CREATE TABLE IF NOT EXISTS activation_codes (
-                    code TEXT PRIMARY KEY,
+                    code_hash TEXT PRIMARY KEY,  -- HMAC-SHA256(code, pepper)，绝不存明文（MEDIUM-002）
                     bound_machine_code TEXT,
                     activated_at TEXT,
                     expires_at TEXT,
@@ -134,8 +136,23 @@ class SQLiteDatabase:
 class ActivationCodeStorage:
     """激活码表专用存储：CRUD + 序列化。"""
 
-    def __init__(self, db: SQLiteDatabase) -> None:
+    def __init__(
+        self,
+        db: SQLiteDatabase,
+        *,
+        code_hasher: Optional[Callable[[str], str]] = None,
+    ) -> None:
+        """
+        :param code_hasher: 激活码 → DB 主键哈希的计算函数（MEDIUM-002）。
+            ``None`` 时用 ``CODE_HASH_PEPPER_DEFAULT`` 的 HMAC-SHA256；生产部署
+            应由 app 装配注入配置的 pepper。明文 code 仅生成时颁发一次，绝不入库。
+        """
         self.db = db
+        self._hash: Callable[[str], str] = (
+            code_hasher
+            if code_hasher is not None
+            else (lambda c: hash_activation_code(c, CODE_HASH_PEPPER_DEFAULT))
+        )
 
     # ---------- 序列化辅助 ----------
     @staticmethod
@@ -171,7 +188,7 @@ class ActivationCodeStorage:
     @staticmethod
     def _row_to_model(row: dict[str, Any]) -> ActivationCode:
         return ActivationCode(
-            activation_code=row["code"],
+            activation_code=row["code_hash"],  # DB 读回填哈希；明文不可得（MEDIUM-002）
             bound_machine_code=ActivationCodeStorage._decode_bound(row["bound_machine_code"]),
             activated_at=ActivationCodeStorage._str_to_datetime(row["activated_at"]),
             expires_at=ActivationCodeStorage._str_to_datetime(row["expires_at"]),
@@ -186,11 +203,11 @@ class ActivationCodeStorage:
             self.db.execute(
                 """
                 INSERT INTO activation_codes (
-                    code, bound_machine_code, activated_at, expires_at, features, status
+                    code_hash, bound_machine_code, activated_at, expires_at, features, status
                 ) VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    activation_code.activation_code,
+                    self._hash(activation_code.activation_code),
                     ActivationCodeStorage._encode_bound(activation_code.bound_machine_code),
                     self._datetime_to_str(activation_code.activated_at),
                     self._datetime_to_str(activation_code.expires_at),
@@ -201,15 +218,17 @@ class ActivationCodeStorage:
 
     def get_by_code(self, code: str) -> Optional[ActivationCode]:
         """根据激活码查询。"""
-        row = self.db.fetch_one("SELECT * FROM activation_codes WHERE code = ?", (code,))
+        row = self.db.fetch_one(
+            "SELECT * FROM activation_codes WHERE code_hash = ?", (self._hash(code),)
+        )
         return self._row_to_model(row) if row else None
 
     def update_status(self, code: str, status: ActivationStatus) -> None:
         """更新激活码状态。"""
         with self.db.transaction():
             self.db.execute(
-                "UPDATE activation_codes SET status = ? WHERE code = ?",
-                (status.value, code),
+                "UPDATE activation_codes SET status = ? WHERE code_hash = ?",
+                (status.value, self._hash(code)),
             )
 
     def bind_machine_code(
@@ -231,13 +250,13 @@ class ActivationCodeStorage:
                 """
                 UPDATE activation_codes
                 SET bound_machine_code = ?, activated_at = ?, status = ?
-                WHERE code = ? AND status = ?
+                WHERE code_hash = ? AND status = ?
                 """,
                 (
                     machine_code,
                     self._datetime_to_str(activated_at),
                     ActivationStatus.USED.value,
-                    code,
+                    self._hash(code),
                     ActivationStatus.UNUSED.value,
                 ),
             )
@@ -247,14 +266,16 @@ class ActivationCodeStorage:
         """更新授权截止时间。"""
         with self.db.transaction():
             self.db.execute(
-                "UPDATE activation_codes SET expires_at = ? WHERE code = ?",
-                (self._datetime_to_str(expires_at), code),
+                "UPDATE activation_codes SET expires_at = ? WHERE code_hash = ?",
+                (self._datetime_to_str(expires_at), self._hash(code)),
             )
 
     def delete(self, code: str) -> None:
         """删除激活码记录。"""
         with self.db.transaction():
-            self.db.execute("DELETE FROM activation_codes WHERE code = ?", (code,))
+            self.db.execute(
+                "DELETE FROM activation_codes WHERE code_hash = ?", (self._hash(code),)
+            )
 
     def list_all(self) -> list[ActivationCode]:
         """列出所有激活码。"""

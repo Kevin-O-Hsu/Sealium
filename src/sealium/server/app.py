@@ -21,7 +21,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from sealium import __version__
-from sealium.common.crypto import RSAEncryptor
+from sealium.common.crypto import RSAEncryptor, hash_activation_code
+from sealium.common.constants import CODE_HASH_PEPPER_DEFAULT
 from sealium.common.exceptions import ConfigError
 from sealium.server.activation_service import ActivationService
 from sealium.server.config import ServerConfig, get_config
@@ -45,11 +46,18 @@ def _load_server_encryptor(cfg: ServerConfig) -> RSAEncryptor:
 
 
 def _open_storage(cfg: ServerConfig) -> tuple[SQLiteDatabase, ActivationCodeStorage]:
-    """打开数据库并初始化表结构，返回 (db, storage)。"""
+    """打开数据库并初始化表结构，返回 (db, storage)。
+
+    激活码以 HMAC-SHA256(code, pepper) 哈希存储（MEDIUM-002）：pepper 取自配置，
+    未设时回退到 ``CODE_HASH_PEPPER_DEFAULT``。明文 code 仅生成时颁发，绝不入库。
+    """
     db = SQLiteDatabase(cfg.paths.database)
     db.connect()
     db.init_tables()
-    return db, ActivationCodeStorage(db)
+    pepper = cfg.code_hash_pepper_secret or CODE_HASH_PEPPER_DEFAULT
+    return db, ActivationCodeStorage(
+        db, code_hasher=lambda c: hash_activation_code(c, pepper)
+    )
 
 
 def create_app(

@@ -28,11 +28,17 @@
 | **激活码被复制到另一台机器** | 硬件指纹绑定；不同机器核心类不匹配 → 判异机拒绝。 |
 | **spoof 工具篡改硬件序列号** | 多表面交叉验证（SMBIOS 固件表 + 磁盘 IOCTL + WMI），单层篡改即暴露；核心类占位符 → 分量缺失 → 核心门槛不过。 |
 | **日志泄漏激活码/机器码** | 审计日志只记 SHA-256 短哈希（前 12 位）。 |
-| **私钥文件被他人读取** | 落盘权限 `0600`；可加口令加密（`.env` `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE`，`SecretStr` 不回显明文）。 |
+| **私钥文件被他人读取** | Linux 下落盘权限 `0600`；可加口令加密（`.env` `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE`，`SecretStr` 不回显明文）。Windows 下 `0600` 不生效（NTFS ACL 不同），私钥**必须**口令加密——但服务端默认部署在 Linux，故通常无需担心。 |
 | **暴力刷激活接口** | 默认限流 60 req/60s/IP（`[rate_limit]`），超限 429。 |
 | **接口结构泄露** | 生产（`[server] debug = false`）关闭 `/docs`/`/redoc`/`/openapi.json`。 |
 
 ## 最佳实践清单（生产部署）
+
+> **默认部署方式：Linux + 反向代理（nginx 等）。** Sealium 服务端进程为明文 HTTP，设计为
+> 置于反向代理 + TLS 之后，默认仅监听回环 `127.0.0.1`（同机反代转发）；反代跨机或容器时设
+> `host = "0.0.0.0"` 并务必置于反代之后。服务端只在指纹比对（不采集硬件），故 Linux 部署完全
+> 可用；仅客户端采集需 Windows。Windows 作服务端部署时 `0600` 权限语义不生效，私钥**必须**
+> 口令加密（见 [服务端部署指南](server-guide.md)）。
 
 - [ ] 私钥加口令加密落盘（`.env` `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE`）。
 - [ ] 私钥文件权限 `0600`，所属用户最小权限。
@@ -79,6 +85,10 @@
 6. **权威时间戳依赖外部 API**：客户端时间戳取自 `https://aisenseapi.com/services/v1/timestamp`。
    该 API 不可达时，激活会因 `ActivationError`（取时间戳失败）而失败。如有强可用性要求，考虑
    注入你自己的 `timestamp_provider`。
+7. **服务端默认部署在 Linux + 反向代理之后**：服务端进程为明文 HTTP，`0600` 文件权限在 Linux
+   下生效、Windows 下不生效（NTFS ACL 不同）。默认部署在 Linux，故 `0600` 与"置于反代 + TLS 之后"
+   均按 Linux 语义保证；若必须在 Windows 上跑服务端，私钥务必口令加密（见
+   [服务端部署指南](server-guide.md)）。
 
 ## 漏洞披露
 

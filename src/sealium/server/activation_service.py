@@ -81,16 +81,18 @@ class ActivationService:
             logger.info("激活拒绝(时间戳) code=%s", _short_hash(code))
             return ActivationResponse.error("请求时间戳无效，请同步时间", nonce)
 
-        # 3. 防重放检查
-        if self._replay_guard.is_replay(code, request.nonce):
-            logger.info("激活拒绝(重放) code=%s", _short_hash(code))
-            return ActivationResponse.error("请求已被使用，请勿重复发送", nonce)
-
-        # 4. 查询激活码
+        # 3. 查询激活码（提前到防重放之前：不存在的码直接返回、不进重放缓存，
+        #    杜绝攻击者用随机码灌满 LRU 驱逐合法 nonce 的冲刷攻击，MEDIUM-006）
         record = self._storage.get_by_code(code)
         if record is None:
             logger.info("激活拒绝(不存在) code=%s", _short_hash(code))
             return ActivationResponse.error(_CODE_UNAVAILABLE_MSG, nonce)
+
+        # 4. 防重放检查（仅对已存在的码记录 nonce，缓存冲刷面被压缩到"已知存在的
+        #    码"，而码为 128 位高熵随机、不可枚举，故实际不可冲刷）
+        if self._replay_guard.is_replay(code, request.nonce):
+            logger.info("激活拒绝(重放) code=%s", _short_hash(code))
+            return ActivationResponse.error("请求已被使用，请勿重复发送", nonce)
 
         # 5. 已使用：同机幂等成功，异机拒绝（与“不存在”对外不可区分）
         if record.is_used():

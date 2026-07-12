@@ -13,7 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Union
 
-from sealium.common.constants import ACTIVATION_CODE_BYTES
+from sealium.common.constants import ACTIVATION_CODE_BYTES, CODE_HASH_PEPPER_DEFAULT
+from sealium.common.crypto import hash_activation_code
 from sealium.common.models import ActivationCode, ActivationStatus
 from sealium.server.config import get_config
 from sealium.server.database import ActivationCodeStorage, SQLiteDatabase
@@ -61,14 +62,19 @@ def generate_activation_codes(
     """
     if features is None:
         features = []
-    path = Path(db_path) if db_path is not None else get_config().paths.database
+    cfg = get_config()
+    path = Path(db_path) if db_path is not None else cfg.paths.database
     path.parent.mkdir(parents=True, exist_ok=True)
 
     expires_datetime = _parse_expires_at(expires_at)
 
     db = SQLiteDatabase(path)
     db.connect()
-    storage = ActivationCodeStorage(db)
+    # 与激活服务同 pepper（MEDIUM-002）：生成时写入的哈希必须能被服务端（同 pepper）查到。
+    pepper = cfg.code_hash_pepper_secret or CODE_HASH_PEPPER_DEFAULT
+    storage = ActivationCodeStorage(
+        db, code_hasher=lambda c: hash_activation_code(c, pepper)
+    )
 
     generated: List[str] = []
     try:

@@ -69,7 +69,7 @@ def _config_base_dir() -> Path:
 class ServerModel(BaseModel):
     """网络与路由。"""
 
-    host: str = "0.0.0.0"  # 生产建议 127.0.0.1（置于反代后）
+    host: str = "127.0.0.1"  # 仅回环：同机反代转发；跨机/容器反代需显式 0.0.0.0（MEDIUM-005）
     port: int = Field(8000, ge=1, le=65535)
     debug: bool = False  # 生产必须 False
     api_prefix: str = "/v1"
@@ -92,6 +92,10 @@ class SecurityModel(BaseModel):
     # 私钥落盘口令（LOW-001）：经 .env / 环境变量注入，绝不写入 sealium.toml。
     # SecretStr 的 repr / model_dump 不暴露明文，防止落日志或进调试端点。
     private_key_passphrase: Optional[SecretStr] = None
+    # 激活码哈希存储 pepper（MEDIUM-002）：经环境变量
+    # SEALIUM_SECURITY__CODE_HASH_PEPPER 注入；未设时回退到 CODE_HASH_PEPPER_DEFAULT
+    # （见 app 装配）。SecretStr 不回显明文。
+    code_hash_pepper: Optional[SecretStr] = None
 
 
 class RateLimitModel(BaseModel):
@@ -239,6 +243,12 @@ class ServerConfig(BaseSettings):
         ps = self.security.private_key_passphrase
         return ps.get_secret_value() if ps is not None else None
 
+    @property
+    def code_hash_pepper_secret(self) -> Optional[str]:
+        """激活码哈希 pepper 明文（仅供哈希计算用）；未设返回 ``None``。"""
+        cp = self.security.code_hash_pepper
+        return cp.get_secret_value() if cp is not None else None
+
     def safe_dump(self) -> dict[str, Any]:
         """脱敏快照（用于 ``/debug/config`` 与 ``config_cli show``）。
 
@@ -250,6 +260,7 @@ class ServerConfig(BaseSettings):
             return str(p) if p is not None else None
 
         ps = self.security.private_key_passphrase
+        cp = self.security.code_hash_pepper
         return {
             "config_file": str(_config_file_path()),
             "server": {
@@ -269,6 +280,7 @@ class ServerConfig(BaseSettings):
                 "timestamp_tolerance_seconds": self.security.timestamp_tolerance_seconds,
                 "replay_cache_size": self.security.replay_cache_size,
                 "private_key_passphrase": "<set>" if ps is not None else "<unset>",
+                "code_hash_pepper": "<set>" if cp is not None else "<unset>",
             },
             "rate_limit": self.rate_limit.model_dump(),
             "machine_id": self.machine_id.model_dump(),

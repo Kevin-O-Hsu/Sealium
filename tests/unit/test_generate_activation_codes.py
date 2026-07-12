@@ -98,3 +98,35 @@ class TestGenerateActivationCodes:
         storage = ActivationCodeStorage(db)
         assert len(storage.list_all()) == 4
         db.close()
+
+    def test_generate_uses_configured_pepper(self, tmp_path, monkeypatch):
+        """MEDIUM-002: generate 用配置的 code_hash_pepper，与激活服务一致。
+
+        部署配了 SEALIUM_SECURITY__CODE_HASH_PEPPER 时，生成写入的哈希必须能被
+        同 pepper 的服务端查到；用默认 pepper 的服务端查不到（证明 pepper 生效）。
+        """
+        from sealium.common.crypto import hash_activation_code
+        import sys
+
+        custom_pepper = "custom-deployment-pepper"
+
+        class _FakeCfg:
+            code_hash_pepper_secret = custom_pepper
+
+        # 注意：sealium.scripts.__init__ 把同名函数导入包命名空间，遮蔽了子模块属性，
+        # 故用 sys.modules 取真正的模块对象来 monkeypatch 其 get_config。
+        gen_module = sys.modules["sealium.scripts.generate_activation_codes"]
+        monkeypatch.setattr(gen_module, "get_config", lambda: _FakeCfg())
+
+        db_path = tmp_path / "peppered.db"
+        codes = generate_activation_codes(1, db_path=db_path)
+
+        db = SQLiteDatabase(db_path)
+        db.connect()
+        same_pepper = ActivationCodeStorage(
+            db, code_hasher=lambda c: hash_activation_code(c, custom_pepper)
+        )
+        default_pepper = ActivationCodeStorage(db)
+        assert same_pepper.get_by_code(codes[0]) is not None  # 同 pepper 可查
+        assert default_pepper.get_by_code(codes[0]) is None  # 默认 pepper 查不到
+        db.close()

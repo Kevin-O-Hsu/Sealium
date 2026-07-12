@@ -7,9 +7,16 @@ from datetime import datetime
 
 import pytest
 
+from sealium.common.constants import CODE_HASH_PEPPER_DEFAULT
+from sealium.common.crypto import hash_activation_code
 from sealium.common.fingerprint import to_storage
 from sealium.common.models import ActivationCode, ActivationStatus
 from sealium.server.database import ActivationCodeStorage, SQLiteDatabase
+
+
+def _hash(code: str) -> str:
+    """测试用哈希（与 storage 默认 code_hasher 同 pepper，MEDIUM-002）。"""
+    return hash_activation_code(code, CODE_HASH_PEPPER_DEFAULT)
 
 
 class TestSQLiteDatabase:
@@ -34,22 +41,22 @@ class TestSQLiteDatabase:
         with pytest.raises(ValueError):
             with db.transaction():
                 db.execute(
-                    "INSERT INTO activation_codes (code, status) VALUES (?, ?)", ("c1", 0)
+                    "INSERT INTO activation_codes (code_hash, status) VALUES (?, ?)", ("c1", 0)
                 )
                 raise ValueError("boom")
-        assert db.fetch_one("SELECT * FROM activation_codes WHERE code=?", ("c1",)) is None
+        assert db.fetch_one("SELECT * FROM activation_codes WHERE code_hash=?", ("c1",)) is None
 
     def test_transaction_commit(self, db: SQLiteDatabase):
         with db.transaction():
             db.execute(
-                "INSERT INTO activation_codes (code, status) VALUES (?, ?)", ("c2", 0)
+                "INSERT INTO activation_codes (code_hash, status) VALUES (?, ?)", ("c2", 0)
             )
-        assert db.fetch_one("SELECT * FROM activation_codes WHERE code=?", ("c2",)) is not None
+        assert db.fetch_one("SELECT * FROM activation_codes WHERE code_hash=?", ("c2",)) is not None
 
     def test_fetch_all(self, db: SQLiteDatabase):
         with db.transaction():
-            db.execute("INSERT INTO activation_codes (code, status) VALUES (?, ?)", ("a", 0))
-            db.execute("INSERT INTO activation_codes (code, status) VALUES (?, ?)", ("b", 0))
+            db.execute("INSERT INTO activation_codes (code_hash, status) VALUES (?, ?)", ("a", 0))
+            db.execute("INSERT INTO activation_codes (code_hash, status) VALUES (?, ?)", ("b", 0))
         assert len(db.fetch_all("SELECT * FROM activation_codes")) == 2
 
     def test_persistence_across_reopen(self, tmp_path):
@@ -57,11 +64,11 @@ class TestSQLiteDatabase:
         db1 = SQLiteDatabase(path)
         db1.connect()
         with db1.transaction():
-            db1.execute("INSERT INTO activation_codes (code, status) VALUES (?, ?)", ("keep", 0))
+            db1.execute("INSERT INTO activation_codes (code_hash, status) VALUES (?, ?)", ("keep", 0))
         db1.close()
         db2 = SQLiteDatabase(path)
         db2.connect()
-        assert db2.fetch_one("SELECT * FROM activation_codes WHERE code=?", ("keep",)) is not None
+        assert db2.fetch_one("SELECT * FROM activation_codes WHERE code_hash=?", ("keep",)) is not None
         db2.close()
 
 
@@ -111,7 +118,8 @@ class TestActivationCodeStorage:
     def test_list_all(self, storage: ActivationCodeStorage):
         storage.create(ActivationCode(activation_code="a"))
         storage.create(ActivationCode(activation_code="b"))
-        assert {c.activation_code for c in storage.list_all()} == {"a", "b"}
+        # DB 读回的 activation_code 是哈希值（明文不可得，MEDIUM-002）
+        assert {c.activation_code for c in storage.list_all()} == {_hash("a"), _hash("b")}
 
     def test_features_serialization_roundtrip(self, storage: ActivationCodeStorage):
         storage.create(ActivationCode(activation_code="c", features=["pro", "ent"]))
@@ -125,3 +133,26 @@ class TestActivationCodeStorage:
     def test_null_features_deserialize_to_empty(self, storage: ActivationCodeStorage):
         storage.create(ActivationCode(activation_code="c"))
         assert storage.get_by_code("c").features == []
+
+    def test_code_stored_as_hash_not_plaintext(self, storage: ActivationCodeStorage):
+        """MEDIUM-002: DB 只存 code_hash，绝不存明文 code。"""
+        storage.create(ActivationCode(activation_code="secret-123"))
+        rows = storage.db.fetch_all("SELECT * FROM activation_codes")
+        assert len(rows) == 1
+        row = rows[0]
+        assert "code_hash" in row
+        assert "code" not in row  # 无明文 code 列
+        assert row["code_hash"] == _hash("secret-123")
+        assert row["code_hash"] != "secret-123"  # 存的不是明文
+
+    def test_different_pepper_isolates_codes(self, db: SQLiteDatabase):
+        """MEDIUM-002: 不同 pepper 产出不同 hash，互相查不到（per-deployment 隔离）。"""
+        s_a = ActivationCodeStorage(
+            db, code_hasher=lambda c: hash_activation_code(c, "pepper-a")
+        )
+        s_a.create(ActivationCode(activation_code="same"))
+        s_b = ActivationCodeStorage(
+            db, code_hasher=lambda c: hash_activation_code(c, "pepper-b")
+        )
+        assert s_b.get_by_code("same") is None  # 不同 pepper → 不同 hash → 查不到
+        assert s_a.get_by_code("same") is not None

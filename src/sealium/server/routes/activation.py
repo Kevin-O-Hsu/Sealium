@@ -14,6 +14,7 @@ import logging
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 
+from sealium.common.constants import MAX_ACTIVATION_BODY_BYTES
 from sealium.common.crypto import RSAEncryptor
 from sealium.common.models import ActivationRequest, ActivationResponse
 from sealium.server.activation_service import ActivationService
@@ -48,9 +49,20 @@ def create_router(activation_path: str = "/activation") -> APIRouter:
                 headers={"Retry-After": str(rate_limiter.window_seconds)},
             )
 
+        # 请求体大小硬上限（MEDIUM-001）：合法激活包 < 8KB，设 64KB 上限防内存耗尽 DoS。
+        # 读前用 Content-Length 早拦截（不读入内存），读后用实际长度复检（防伪造/缺失头）。
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > MAX_ACTIVATION_BODY_BYTES:
+                    return Response(content=b"", status_code=413)
+            except ValueError:
+                pass  # 非法 Content-Length，交由下方实际长度检查兜底
         raw_data = await request.body()
         if not raw_data:
             return Response(content=b"", status_code=400)
+        if len(raw_data) > MAX_ACTIVATION_BODY_BYTES:
+            return Response(content=b"", status_code=413)
 
         # 解密前的错误无法加密响应（尚无 AES 密钥），直接返回 400 空体
         try:

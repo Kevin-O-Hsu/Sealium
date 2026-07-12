@@ -25,6 +25,10 @@ dev = [
     "pytest>=8",
     "httpx",
     "pip-audit>=2.7",
+    "pip-tools>=7",  # 生成带 hash 的锁文件（MEDIUM-004）
+]
+packaging = [
+    "nuitka>=2",  # 客户端打包成原生可执行（非运行时/测试依赖）
 ]
 
 [tool.setuptools.packages.find]

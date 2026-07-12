@@ -8,6 +8,7 @@ import json
 import pytest
 
 from sealium.common.fingerprint import (
+    MAX_COMPONENTS,
     Component,
     MachineFingerprint,
     MachineIdPolicy,
@@ -31,6 +32,26 @@ def _full_fp(seed: str = "m", *, spoof: float = 0.0, drift: bool = False) -> Mac
         ),
         spoof_score=spoof,
     )
+
+
+class TestComponentLimit:
+    def test_too_many_components_rejected(self):
+        """MEDIUM-001: components 超上限拒绝解析（防数组塞海量分量耗尽内存）。"""
+        components = [
+            {"c": f"cat{i}", "h": f"h{i}", "core": False}
+            for i in range(MAX_COMPONENTS + 1)
+        ]
+        with pytest.raises(ValueError):
+            MachineFingerprint.from_dict({"v": 1, "components": components, "spoof": 0.0})
+
+    def test_at_limit_accepted(self):
+        """MEDIUM-001: 恰好等于上限仍可正常解析。"""
+        components = [
+            {"c": f"cat{i}", "h": f"h{i}", "core": False}
+            for i in range(MAX_COMPONENTS)
+        ]
+        fp = MachineFingerprint.from_dict({"v": 1, "components": components, "spoof": 0.0})
+        assert len(fp.components) == MAX_COMPONENTS
 
 
 class TestMatches:

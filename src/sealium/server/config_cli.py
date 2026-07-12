@@ -4,7 +4,7 @@
 
 子命令
 ------
-    init    在当前目录生成 sealium.toml 模板（已存在则跳过；--force 覆盖）
+    init    在当前目录生成 sealium.toml + .env 模板（已存在则跳过该项；--force 覆盖）
     show    脱敏打印当前生效配置
     check   加载并业务校验，退出码反映配置健康
 
@@ -47,6 +47,10 @@ _SEALIUM_TOML_TEMPLATE = """\
 #     python -m sealium.server.run
 # 仅当需要覆盖默认值时才编辑本文件。
 #
+# 【默认部署方式】Linux + 反向代理（nginx 等）——见 docs/server-guide.md。服务端默认
+# 仅监听回环（同机反代转发）；反向代理跨机/容器时设 host = "0.0.0.0" 并务必置于反代
+# + TLS 之后。Windows 作服务端部署时 0600 权限语义不生效，私钥务必口令加密。
+#
 # 配置优先级（高→低）：构造参数 > 环境变量 SEALIUM_* > .env > 本文件 > 默认值
 # 敏感项（私钥口令）用环境变量，不要写进本文件：
 #     export SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE=your-passphrase
@@ -54,7 +58,9 @@ _SEALIUM_TOML_TEMPLATE = """\
 # ==========================================================================
 
 [server]
-host = "0.0.0.0"          # 生产建议 127.0.0.1（置于反向代理后）
+# 默认 "127.0.0.1"（仅回环，同机反代转发）；反向代理跨机/容器时改为 "0.0.0.0" 或
+# 内网 IP，并务必置于反代 + TLS 之后（MEDIUM-005）。
+host = "127.0.0.1"
 port = 8000
 debug = false             # 生产必须 false
 api_prefix = "/v1"
@@ -89,17 +95,77 @@ origins = ["*"]
 """
 
 
+# ---------------------------------------------------------------------------
+# init 生成的 .env 模板（敏感项 + 常用部署差异，逐项注释）。
+# .env 已被 .gitignore 忽略，填入真实密钥后保持本地，绝不入库。
+# ---------------------------------------------------------------------------
+_ENV_TEMPLATE = """\
+# ==========================================================================
+# Sealium 敏感项与部署差异（.env）
+# ==========================================================================
+# 由 `python -m sealium.server.config_cli init` 生成于当前目录。
+# .env 已被 .gitignore 忽略，不会入库——填入真实密钥后保持本地。
+#
+# .env 与环境变量同语义；优先级（高→低）：构造参数 > 环境变量 > .env > sealium.toml > 默认值。
+# 结构化配置（端口/限流/策略等）建议放 sealium.toml；敏感项（口令/pepper）放这里。
+# 完整字段说明见 docs/configuration.md。
+# ==========================================================================
+
+# ──────────────────────────────────────────────────────────────────────────
+# 安全敏感项（务必改为你的随机值，切勿保留下面的占位符）
+# ──────────────────────────────────────────────────────────────────────────
+
+# 服务端私钥口令：需与 `generate_keys --passphrase` 一致。
+# 未设则私钥明文落盘；Windows 下 0600 权限不生效，强烈建议设置。
+SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE=REPLACE_WITH_LONG_RANDOM_PASSPHRASE
+
+# 激活码哈希 pepper（MEDIUM-002）：激活码以 HMAC-SHA256(code, pepper) 存储，DB 泄露也无法还原。
+# 设为部署唯一随机串；**部署后不可变**——改它 = 已生成的激活码全部失效、需重新生成。
+SEALIUM_SECURITY__CODE_HASH_PEPPER=REPLACE_WITH_DEPLOY_UNIQUE_RANDOM
+
+# ──────────────────────────────────────────────────────────────────────────
+# 部署差异（按需取消注释；结构化配置建议放 sealium.toml）
+# ──────────────────────────────────────────────────────────────────────────
+
+# 监听地址：默认 127.0.0.1（仅回环，同机反代转发）；反代跨机/容器时设 0.0.0.0。
+# SEALIUM_SERVER__HOST=0.0.0.0
+# 监听端口（默认 8000）
+# SEALIUM_SERVER__PORT=8000
+# 调试模式（生产必须 false）
+# SEALIUM_SERVER__DEBUG=false
+
+# 限流（默认 60 req / 60 s 每 IP）
+# SEALIUM_RATE_LIMIT__ENABLED=true
+# SEALIUM_RATE_LIMIT__MAX_REQUESTS=60
+# SEALIUM_RATE_LIMIT__WINDOW_SECONDS=60
+
+# 时间戳容忍窗口（秒，默认 300）/ 防重放缓存容量（默认 10000）
+# SEALIUM_SECURITY__TIMESTAMP_TOLERANCE_SECONDS=300
+# SEALIUM_SECURITY__REPLAY_CACHE_SIZE=10000
+"""
+
+
 def _cmd_init(force: bool) -> int:
-    """在当前目录生成 sealium.toml 模板。"""
-    target = Path("sealium.toml").resolve()
-    if target.exists() and not force:
-        print(f"⚠️  已存在 {target}，未覆盖。用 --force 覆盖，或直接手动编辑。")
-        return 1
-    target.write_text(_SEALIUM_TOML_TEMPLATE, encoding="utf-8")
-    print(f"✅ 已生成 {target}")
-    print("   按需编辑后自检：python -m sealium.server.config_cli check")
-    print("   无需配置也能直接启动：python -m sealium.server.run")
-    return 0
+    """在当前目录生成 sealium.toml + .env 模板（已存在则跳过该项）。"""
+    targets = (
+        (Path("sealium.toml").resolve(), _SEALIUM_TOML_TEMPLATE),
+        (Path(".env").resolve(), _ENV_TEMPLATE),
+    )
+    wrote: list[Path] = []
+    skipped: list[Path] = []
+    for path, template in targets:
+        if path.exists() and not force:
+            skipped.append(path)
+            continue
+        path.write_text(template, encoding="utf-8")
+        wrote.append(path)
+    if wrote:
+        print("✅ 已生成：" + "、".join(str(p) for p in wrote))
+        print("   编辑后自检：python -m sealium.server.config_cli check")
+        print("   ⚠️  .env 含敏感占位符，务必改为你的随机值（.env 已被 .gitignore 忽略）。")
+    if skipped:
+        print("⚠️  已跳过（已存在，用 --force 覆盖）：" + "、".join(str(p) for p in skipped))
+    return 0 if wrote else 1
 
 
 def _cmd_show() -> int:
@@ -134,8 +200,8 @@ def main() -> None:
         help="TOML 配置文件路径（默认 ./sealium.toml；仅 show/check 读取）",
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    p_init = sub.add_parser("init", help="在当前目录生成 sealium.toml 模板")
-    p_init.add_argument("--force", action="store_true", help="覆盖已存在的 sealium.toml")
+    p_init = sub.add_parser("init", help="在当前目录生成 sealium.toml + .env 模板")
+    p_init.add_argument("--force", action="store_true", help="覆盖已存在的 sealium.toml / .env")
     sub.add_parser("show", help="脱敏打印当前生效配置")
     sub.add_parser("check", help="加载并业务校验配置，退出码反映健康")
     args = parser.parse_args()

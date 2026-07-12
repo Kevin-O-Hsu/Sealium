@@ -1,0 +1,8 @@
+# 开发/测试依赖（MEDIUM-004）：在运行时锁文件之上叠加。
+# 生成锁定版：pip-compile --generate-hashes --resolver=backtracking requirements-dev.in -o requirements-dev.txt
+-r requirements.in
+-e .
+pytest>=8
+httpx
+pip-audit>=2.7
+pip-tools>=7

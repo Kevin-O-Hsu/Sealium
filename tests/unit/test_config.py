@@ -50,7 +50,7 @@ class TestDefaults:
         # 无 toml、无 env：全部走内置默认
         monkeypatch.setenv("SEALIUM_CONFIG", str(tmp_path / "nonexistent.toml"))
         cfg = ServerConfig()
-        assert cfg.server.host == "0.0.0.0"
+        assert cfg.server.host == "127.0.0.1"  # 默认仅回环（MEDIUM-005）
         assert cfg.server.port == 8000
         assert cfg.server.debug is False
         assert cfg.server.api_prefix == "/v1"

@@ -215,3 +215,30 @@ class TestConcurrentBindingAtomicity:
         assert bound.status == ActivationStatus.USED
         possible = {_fp(f"machine{i}") for i in range(n)}
         assert bound.bound_machine_code in possible
+
+
+class TestReplayCacheFlushResistance:
+    """MEDIUM-006: 不存在的码不进 replay 缓存，杜绝用随机码灌满 LRU 的冲刷攻击。"""
+
+    def test_nonexistent_codes_do_not_pollute_replay_cache(self, storage):
+        guard = ReplayGuard()
+        svc = ActivationService(storage, guard, 300, now_provider=lambda: NOW)
+        baseline = len(guard._store._seen)
+        for i in range(50):
+            resp = svc.process(make_request(code=f"ghost-{i}", nonce=f"n-{i}"))
+            assert resp.result == "error"
+            assert "已被使用" in resp.error_msg
+        # 不存在的码不进缓存：缓存大小不应增长
+        assert len(guard._store._seen) == baseline
+
+    def test_existing_code_still_enters_replay_cache(self, storage):
+        """MEDIUM-006 回归：存在的码仍进缓存，合法重放被拦截。"""
+        guard = ReplayGuard()
+        svc = ActivationService(storage, guard, 300, now_provider=lambda: NOW)
+        storage.create(ActivationCode(activation_code="real"))
+        first = svc.process(make_request(code="real", nonce="once"))
+        assert first.result == "success"
+        assert len(guard._store._seen) == 1  # 存在的码进了缓存
+        second = svc.process(make_request(code="real", nonce="once"))
+        assert second.result == "error"
+        assert "重复" in second.error_msg

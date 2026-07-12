@@ -12,7 +12,12 @@ from __future__ import annotations
 
 import json
 
-from sealium.common.constants import AES_GCM_NONCE_SIZE, AES_GCM_TAG_SIZE, RSA_KEY_SIZE
+from sealium.common.constants import (
+    AES_GCM_NONCE_SIZE,
+    AES_GCM_TAG_SIZE,
+    MAX_ACTIVATION_PLAINTEXT_BYTES,
+    RSA_KEY_SIZE,
+)
 from sealium.common.crypto import AESEncryptor, RSAEncryptor
 
 
@@ -53,6 +58,10 @@ def decrypt_request(
     """
     aes_key = server_encryptor.decrypt(encrypted_aes_key)
     plaintext = AESEncryptor.decrypt(aes_key, nonce, ciphertext, tag)
+    # 明文长度预检（MEDIUM-001 纵深）：在 json.loads 二次放大前卡住"小密钥包解出
+    # 超大 JSON"的放大攻击。超限抛 ValueError，由路由映射为 400。
+    if len(plaintext) > MAX_ACTIVATION_PLAINTEXT_BYTES:
+        raise ValueError("请求明文过大")
     request_dict = json.loads(plaintext.decode("utf-8"))
     return aes_key, request_dict
 
