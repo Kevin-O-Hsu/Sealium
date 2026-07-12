@@ -1,6 +1,11 @@
-# 运行时直接依赖（MEDIUM-004）。
-# 与 pyproject.toml [project] dependencies 保持对齐——pyproject 是依赖元数据权威，
-# 本文件是锁文件权威输入。改动依赖时两处同步更新，再重新 pip-compile。
+# 服务端部署运行时锁文件输入（MEDIUM-004）。
+# 锁定服务端（Linux）实际需要的依赖树，保证可复现 + 供应链完整性（带 hash）。
+#
+# 注意：wmi 是 Windows 客户端硬件采集依赖，不属于服务端运行时——此处不锁（否则
+# 其传递依赖 pywin32 无 Linux wheel，会拖垮 Linux CI）。Windows 客户端开发请用
+# `pip install -e ".[dev]"`，pyproject 的 platform marker 会自动装 wmi。
+#
+# 依赖元数据权威是 pyproject.toml [project] dependencies；本文件是其"服务端部署"子集。
 # 生成锁定版：pip-compile --generate-hashes --resolver=backtracking requirements.in -o requirements.txt
 cryptography>=42
 requests>=2.28
@@ -8,4 +13,3 @@ fastapi>=0.100
 pydantic-settings>=2.0
 uvicorn>=0.20
 tomli; python_version < "3.11"
-wmi; platform_system == "Windows"

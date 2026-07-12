@@ -21,6 +21,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+          pip install --no-deps -e .   # 项目本体（依赖已由锁文件提供，避免重解析）
 
       - name: Run tests
         run: pytest -ra
@@ -39,7 +40,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -e .
+          pip install --no-deps -e .   # 项目本体（依赖已由锁文件提供）
 
       # 依赖漏洞扫描（A03 供应链）。审计锁定的运行时依赖树；失败即阻断合并。
       - name: Audit dependencies for known CVEs
