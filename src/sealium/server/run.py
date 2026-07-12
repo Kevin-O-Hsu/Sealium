@@ -26,7 +26,6 @@ import sys
 
 import uvicorn
 
-from sealium.common.constants import MAX_ACTIVATION_BODY_BYTES
 from sealium.server.config import get_config
 
 
@@ -64,13 +63,15 @@ def main() -> None:
 
     cfg = get_config()
     _warn_bare_exposure(cfg)
+    # 注：请求体大小上限（MEDIUM-001）不在 uvicorn 配置——uvicorn 无此参数，body 大小限制
+    # 本属 ASGI 应用层职责（见 https://uvicorn.dev/settings/）。已在路由层 activation.py 用
+    # Content-Length 头 + 实际长度双重 413 拦截实现，并由 test_oversized_body_returns_413 守护。
     uvicorn.run(
         "sealium.server.app:app",
         host=cfg.server.host,
         port=cfg.server.port,
         reload=cfg.server.debug,
         log_level=cfg.logging.level.lower(),
-        limit_max_request_size=MAX_ACTIVATION_BODY_BYTES,  # 请求体上限（MEDIUM-001）
     )
 
 
