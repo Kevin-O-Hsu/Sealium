@@ -156,11 +156,6 @@ pip install -e ".[dev]"
 pytest
 ```
 
-For **reproducible installs**, pinned lock files (`requirements.txt` /
-`requirements-dev.txt`) are committed and used by CI. Regenerate with
-`pip-compile --generate-hashes requirements.in` (and `requirements-dev.in`); the `.in`
-files are the source of truth, `pyproject.toml` is the dependency metadata authority.
-
 The test suite runs fully offline: the FastAPI server is driven in-process via
 `TestClient`, the database is a throwaway SQLite file, hardware collection and the
 timestamp source are injected — no live server, network, or real hardware required.

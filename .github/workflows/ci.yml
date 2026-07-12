@@ -17,11 +17,10 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install locked dependencies
+      - name: Install package (with dev extras)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install --no-deps -e .   # 项目本体（依赖已由锁文件提供，避免重解析）
+          pip install -e ".[dev]"
 
       - name: Run tests
         run: pytest -ra
@@ -36,12 +35,12 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install locked runtime dependencies
+      - name: Install pip-audit
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install --no-deps -e .   # 项目本体（依赖已由锁文件提供）
+          pip install pip-audit
+          pip install -e .
 
-      # 依赖漏洞扫描（A03 供应链）。审计锁定的运行时依赖树；失败即阻断合并。
+      # 依赖漏洞扫描（INFO-001 / A03 供应链）。失败即阻断合并。
       - name: Audit dependencies for known CVEs
         run: pip-audit --strict
