@@ -107,8 +107,9 @@ HTTP 429, Retry-After: 60
 # 健康检查
 curl https://activation.example.com/health
 
-# 看配置（仅 [server] debug = true；脱敏，私钥口令以 <set>/<unset> 表示）
-curl https://activation.example.com/debug/config
+# 看配置（仅 [server] debug = true；脱敏，私钥口令以 <set>/<unset> 表示）。
+# /debug/config 仅限本机回环访问（LOW-004），需在服务器本机访问：
+curl http://127.0.0.1:8000/debug/config
 # 无需启动服务也能查看 / 校验配置：
 python -m sealium.server.config_cli show|check
 

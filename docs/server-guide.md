@@ -173,8 +173,10 @@ Sealium 服务端默认部署在 Linux。若必须在 Windows 上运行服务端
 ## 8. 调试
 
 `[server] debug = true`（或 `SEALIUM_SERVER__DEBUG=true`）时：
+- 启动时打印显著**警告**，提示 debug 已开启、生产必须关闭。
 - 自动开启 `/docs`、`/redoc`、`/openapi.json`（生产请保持 `false`，避免泄露接口结构）。
-- `/debug/config` 可查看当前生效配置（**脱敏**：私钥口令以 `<set>`/`<unset>` 表示）。
+- `/debug/config` 可查看当前生效配置（**脱敏**：私钥口令以 `<set>`/`<unset>` 表示），但
+  **仅限本机回环访问**（LOW-004：该端点暴露绝对路径、限流参数、判定阈值等细节，非回环请求返回 403）。
 - uvicorn 开启热重载。
 
 无需启动服务也能查看 / 校验配置：`python -m sealium.server.config_cli show|check`。

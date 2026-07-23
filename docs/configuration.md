@@ -60,7 +60,7 @@ python -m sealium.server.run
 |---|---|---|
 | `host` | `127.0.0.1` | 监听地址。**默认仅回环**（安全默认，同机反代转发）；反向代理跨机/容器时设 `0.0.0.0`（或内网 IP）并务必置于反代之后 |
 | `port` | `8000` | 监听端口（1–65535） |
-| `debug` | `false` | 调试模式：开启 `/docs`/`/redoc`/`/openapi.json`、`/debug/config`、uvicorn 热重载。**生产必须 `false`** |
+| `debug` | `false` | 调试模式：开启 `/docs`/`/redoc`/`/openapi.json`、`/debug/config`（仅回环）、uvicorn 热重载，并在启动时打印显著警告。**生产必须 `false`** |
 | `api_prefix` | `/v1` | API 前缀 |
 | `activation_path` | `/activation` | 激活路径（完整路由 = `api_prefix` + `activation_path`，默认 `/v1/activation`） |
 

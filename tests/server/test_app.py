@@ -63,7 +63,8 @@ def test_debug_mode_exposes_debug_endpoint(server_keypair, storage, tmp_path):
         storage=storage,
         now_provider=lambda: datetime(2026, 1, 1),
     )
-    with TestClient(application) as test_client:
+    # LOW-004：/debug/config 仅限本机回环，用回环对端访问
+    with TestClient(application, client=("127.0.0.1", 0)) as test_client:
         resp = test_client.get("/debug/config")
         assert resp.status_code == 200
         body = resp.json()
@@ -71,6 +72,20 @@ def test_debug_mode_exposes_debug_endpoint(server_keypair, storage, tmp_path):
         assert "database" in body["paths"]
         # 脱敏：passphrase 永远不回显明文
         assert body["security"]["private_key_passphrase"] == "<unset>"
+
+
+def test_debug_endpoint_rejects_non_loopback(server_keypair, storage, tmp_path):
+    """LOW-004：/debug/config 仅限本机回环；非回环来源（如远程公网）返回 403。"""
+    application = create_app(
+        config=_config(tmp_path, debug=True),
+        encryptor=server_keypair,
+        storage=storage,
+        now_provider=lambda: datetime(2026, 1, 1),
+    )
+    # 默认 TestClient 对端为 "testclient"（非回环），模拟远程访问
+    with TestClient(application) as test_client:
+        resp = test_client.get("/debug/config")
+        assert resp.status_code == 403
 
 
 def test_production_mode_hides_debug_endpoint(make_app, storage):

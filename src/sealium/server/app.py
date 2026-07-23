@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Callable, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from sealium import __version__
@@ -32,6 +32,9 @@ from sealium.server.replay_guard import ReplayGuard
 from sealium.server.routes.activation import create_router
 
 logger = logging.getLogger("sealium.server")
+
+# 视为回环的 host：/debug/config 仅允许这些来源访问（LOW-004），与 run.py._LOOPBACK_HOSTS 一致。
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
 
 def _load_server_encryptor(cfg: ServerConfig) -> RSAEncryptor:
@@ -118,6 +121,10 @@ def create_app(
         app.state.rate_limiter = limiter
 
         if cfg.server.debug:
+            logger.warning(
+                "⚠️ DEBUG 模式已开启：/docs、/redoc、/openapi.json、/debug/config 均暴露。"
+                "生产环境必须 [server] debug=false。/debug/config 仅限本机回环访问（LOW-004）。"
+            )
             logger.debug("生效配置（脱敏）: %s", cfg.safe_dump())
 
         try:
@@ -159,8 +166,15 @@ def create_app(
     if cfg.server.debug:
 
         @app.get("/debug/config", tags=["debug"])
-        async def debug_config() -> dict:
-            """查看当前生效配置（脱敏；私钥口令以 <set>/<unset> 表示）。"""
+        async def debug_config(request: Request) -> dict:
+            """查看当前生效配置（脱敏）。仅限本机回环访问（LOW-004）。
+
+            debug 模式下此端点暴露绝对路径、限流参数、判定阈值等细节；若生产误开
+            debug 又暴露公网，远程攻击者可借此定位高价值文件。故强制仅本机回环可读。
+            """
+            peer = request.client.host if request.client else None
+            if peer not in _LOOPBACK_HOSTS:
+                raise HTTPException(status_code=403, detail="debug 端点仅限本机回环访问")
             return cfg.safe_dump()
 
     return app
