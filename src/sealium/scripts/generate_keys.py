@@ -82,7 +82,8 @@ if __name__ == "__main__":
         "--passphrase",
         type=str,
         default=os.environ.get("SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE"),
-        help="私钥落盘口令（默认读 SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE 环境变量）；"
+        help="私钥落盘口令。推荐用环境变量 SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE"
+        "（命令行传参会进入进程列表 / shell 历史，存在泄漏风险，LOW-007）；"
         "未提供则私钥明文存储",
     )
     args = parser.parse_args()

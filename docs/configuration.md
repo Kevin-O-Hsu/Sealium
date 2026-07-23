@@ -135,7 +135,7 @@ python -m sealium.server.run
 
 | 字段（`[security]`） | 环境变量 | 必要性 | 说明 |
 |---|---|---|---|
-| `private_key_passphrase` | `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE` | 生产**强烈建议** | 私钥口令，需与 `generate_keys --passphrase` 一致。未设则私钥明文落盘（Windows 下 `0600` 不生效，务必设置） |
+| `private_key_passphrase` | `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE` | 生产**强烈建议** | 私钥口令，需与 `generate_keys` 生成时一致（生成时同样用此环境变量，避免命令行 `--passphrase` 泄漏到进程列表 / shell 历史，LOW-007）。未设则私钥明文落盘（Windows 下 `0600` 不生效，务必设置） |
 | `code_hash_pepper` | `SEALIUM_SECURITY__CODE_HASH_PEPPER` | 生产**建议** | 激活码哈希 pepper（见下） |
 
 ### `code_hash_pepper`（MEDIUM-002）

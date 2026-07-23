@@ -28,16 +28,20 @@ python -m sealium.scripts.generate_keys \
 - **私钥** `server_private.pem`：只留在服务器，权限自动收紧为 `0600`，**永不分发、永不提交**。
 - **公钥** `server_public.pem`：随客户端分发（客户端只需要它）。
 
-建议给私钥加口令加密落盘：
+建议给私钥加口令加密落盘。**优先用环境变量**（避免口令进入进程列表 / shell 历史，LOW-007）：
 
 ```bash
-python -m sealium.scripts.generate_keys --passphrase "a-long-random-passphrase"
+export SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE="a-long-random-passphrase"
+python -m sealium.scripts.generate_keys
 ```
 
-启动时经 `.env` 或环境变量 `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE` 提供同名口令；口令、
-激活码哈希 pepper 等敏感项的完整配置见 [配置参考 §4](configuration.md#4-敏感项与-env-配置)。
+> ⚠️ 避免用命令行 `--passphrase xxx`：它会进入进程列表（`ps` / 任务管理器可见）与 shell
+> 历史，存在泄漏风险。`generate_keys` 默认读 `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE` 环境变量。
 
-> 不提供 `--passphrase` 则私钥明文存储（向后兼容，不推荐用于生产）。
+启动时经 `.env` 或同名环境变量提供口令解密；口令、激活码哈希 pepper 等敏感项的完整配置见
+[配置参考 §4](configuration.md#4-敏感项与-env-配置)。
+
+> 不设口令则私钥明文存储（向后兼容，不推荐用于生产）。
 
 ## 3. 生成激活码
 
@@ -153,8 +157,8 @@ Sealium 服务端默认部署在 Linux。若必须在 Windows 上运行服务端
 
 - **文件权限**：`os.chmod(0600)` 在 NTFS 上不生效（只切换只读位，不约束 ACL）。私钥与
   SQLite 文件对同机其他用户默认可读——务必用 `icacls` 收紧 ACL，或更简单：**给私钥加口令
-  加密**（`--passphrase` + `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE`），这是 Windows 上唯一
-  可靠的私钥保护。
+  加密**（经环境变量 `SEALIUM_SECURITY__PRIVATE_KEY_PASSPHRASE` 设置，避免命令行 `--passphrase`
+  泄漏到进程列表，LOW-007），这是 Windows 上唯一可靠的私钥保护。
 - **激活码已哈希存储**（MEDIUM-002）：SQLite 文件即便被读出，也无法直接获得可用激活码。
 - **服务化**：用 NSSM/Windows Service 包装 `python -m sealium.server.run`，而非裸控制台。
 
