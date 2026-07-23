@@ -131,7 +131,10 @@ class TestExpiry:
         storage.create(ActivationCode(activation_code="c", expires_at=datetime(2020, 1, 1)))
         resp = service.process(make_request())
         assert resp.result == "error"
-        assert "过期" in resp.error_msg
+        # LOW-001：对外与「不存在/他机占用」合并为统一提示，关闭存在性枚举；
+        # 「过期」细节只进审计日志，不出现在对外响应里。
+        assert "已被使用" in resp.error_msg
+        assert "过期" not in resp.error_msg
 
 
 class TestFreshActivation:

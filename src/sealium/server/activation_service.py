@@ -114,10 +114,11 @@ class ActivationService:
             )
             return ActivationResponse.error(_CODE_UNAVAILABLE_MSG, nonce)
 
-        # 6. 过期检查
+        # 6. 过期检查（LOW-001）：对外与「不存在/他机占用」合并为同一通用提示，
+        #    关闭「该码存在但已过期」的存在性枚举；真实原因写入审计日志。
         if record.is_expired(now=now):
             logger.info("激活拒绝(过期) code=%s", _short_hash(code))
-            return ActivationResponse.error("激活码已过期", nonce)
+            return ActivationResponse.error(_CODE_UNAVAILABLE_MSG, nonce)
 
         # 7. 原子绑定：条件 UPDATE 保证仅一台机器能赢得绑定（HIGH-001）
         try:
