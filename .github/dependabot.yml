@@ -1,0 +1,16 @@
+# Dependabot 配置（LOW-005）
+# CI 中所有 GitHub Actions 已 pin 到 commit SHA（防 tag 被重指/账号被攻陷时注入）。
+# Dependabot 周期检查这些 action 的新版本，提 PR 把 SHA 升级到最新稳定 tag。
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
