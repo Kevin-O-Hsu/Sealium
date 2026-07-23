@@ -66,12 +66,18 @@ def main() -> None:
     # 注：请求体大小上限（MEDIUM-001）不在 uvicorn 配置——uvicorn 无此参数，body 大小限制
     # 本属 ASGI 应用层职责（见 https://uvicorn.dev/settings/）。已在路由层 activation.py 用
     # Content-Length 头 + 实际长度双重 413 拦截实现，并由 test_oversized_body_returns_413 守护。
+    # HIGH-001：启用代理头解析，使 uvicorn 自身（访问日志/连接记录）也按受信代理解析
+    # X-Forwarded-For，与应用层 resolve_client_ip 共用同一份 trusted_proxies 配置（纵深防御）。
+    # 仅当 TCP 对端在 forwarded_allow_ips 内时，uvicorn 才用 XFF 覆盖 client.host，
+    # 避免直接信任可伪造头（HOTSPOT-005）。
     uvicorn.run(
         "sealium.server.app:app",
         host=cfg.server.host,
         port=cfg.server.port,
         reload=cfg.server.debug,
         log_level=cfg.logging.level.lower(),
+        proxy_headers=True,
+        forwarded_allow_ips=",".join(cfg.server.trusted_proxies),
     )
 
 

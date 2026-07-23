@@ -65,6 +65,10 @@ port = 8000
 debug = false             # 生产必须 false
 api_prefix = "/v1"
 activation_path = "/activation"
+# 受信任的代理 IP（HIGH-001）：仅当请求的 TCP 对端在此列表内时，限流才采信其
+# 写入的 X-Forwarded-For 解析真实客户端 IP。默认仅回环（同机反代）；反向代理
+# 跨机/容器时务必加入反代所在 IP，否则限流仍按代理 IP 聚合退化为全局单桶。
+trusted_proxies = ["127.0.0.1", "::1"]
 
 [paths]
 database = "data/database.db"
@@ -133,6 +137,10 @@ SEALIUM_SECURITY__CODE_HASH_PEPPER=REPLACE_WITH_DEPLOY_UNIQUE_RANDOM
 # SEALIUM_SERVER__PORT=8000
 # 调试模式（生产必须 false）
 # SEALIUM_SERVER__DEBUG=false
+
+# 受信任代理 IP（HIGH-001）：反代跨机/容器时加入反代所在 IP，限流才按真实客户端
+# IP 分桶（JSON 数组语法）。同机反代默认值 ["127.0.0.1","::1"] 无需设置。
+# SEALIUM_SERVER__TRUSTED_PROXIES=["10.0.0.5","127.0.0.1","::1"]
 
 # 限流（默认 60 req / 60 s 每 IP）
 # SEALIUM_RATE_LIMIT__ENABLED=true

@@ -55,6 +55,8 @@ class TestDefaults:
         assert cfg.server.debug is False
         assert cfg.server.api_prefix == "/v1"
         assert cfg.server.activation_path == "/activation"
+        # HIGH-001：默认仅信任回环（同机反代），覆盖默认推荐部署
+        assert cfg.server.trusted_proxies == ["127.0.0.1", "::1"]
         assert cfg.security.timestamp_tolerance_seconds == 300
         assert cfg.security.replay_cache_size == 10000
         assert cfg.security.private_key_passphrase is None
@@ -130,6 +132,15 @@ class TestPriority:
         monkeypatch.setenv("SEALIUM_SERVER__PORT", "9000")
         cfg = ServerConfig(server=ServerModel(port=7000))
         assert cfg.server.port == 7000  # init > env
+
+    def test_trusted_proxies_via_env_json(self, monkeypatch, clean_sealium_env, tmp_path):
+        # HIGH-001：复杂 list 类型经环境变量以 JSON 数组语法注入
+        monkeypatch.setenv("SEALIUM_CONFIG", str(tmp_path / "none.toml"))
+        monkeypatch.setenv("SEALIUM_SERVER__TRUSTED_PROXIES", '["10.0.0.5","127.0.0.1"]')
+        cfg = ServerConfig()
+        assert cfg.server.trusted_proxies == ["10.0.0.5", "127.0.0.1"]
+        # safe_dump 暴露 trusted_proxies（/debug/config 可审计）
+        assert cfg.safe_dump()["server"]["trusted_proxies"] == ["10.0.0.5", "127.0.0.1"]
 
 
 class TestSecretStr:

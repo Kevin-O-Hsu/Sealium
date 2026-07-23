@@ -18,6 +18,7 @@ from sealium.common.constants import MAX_ACTIVATION_BODY_BYTES
 from sealium.common.crypto import RSAEncryptor
 from sealium.common.models import ActivationRequest, ActivationResponse
 from sealium.server.activation_service import ActivationService
+from sealium.server.client_identity import resolve_client_ip
 from sealium.server.crypto_transport import (
     decrypt_request,
     encrypt_response,
@@ -40,8 +41,10 @@ def create_router(activation_path: str = "/activation") -> APIRouter:
         service: ActivationService = Depends(get_activation_service),
         rate_limiter: RateLimiter = Depends(get_rate_limiter),
     ) -> Response:
-        # 0. 速率限制（MEDIUM-002）：按客户端 IP 聚合，超限直接 429
-        client_ip = request.client.host if request.client else "unknown"
+        # 0. 速率限制（MEDIUM-002）：按真实客户端 IP 聚合，超限直接 429。
+        #    HIGH-001：反代部署下经 trusted_proxies 受控解析 X-Forwarded-For，
+        #    否则 TCP 对端恒为代理 IP、所有限流并入全局单桶。
+        client_ip = resolve_client_ip(request, request.app.state.config.server.trusted_proxies)
         if not rate_limiter.allow(client_ip):
             return Response(
                 content=b"",

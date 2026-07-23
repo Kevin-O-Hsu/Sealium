@@ -74,6 +74,12 @@ class ServerModel(BaseModel):
     debug: bool = False  # 生产必须 False
     api_prefix: str = "/v1"
     activation_path: str = "/activation"
+    # 反向代理部署下受信任的代理 IP（HIGH-001）：仅当 TCP 对端 IP 在此列表内时，
+    # 限流才采信其写入的 X-Forwarded-For 解析真实客户端 IP（见
+    # client_identity.resolve_client_ip）。默认仅回环（覆盖「同机反代」这一默认
+    # 推荐部署）；反向代理跨机/容器时须显式加入反代所在 IP，否则限流仍按代理 IP
+    # 聚合退化为全局单桶。直接信任未经此列表约束的 XFF 会引入伪造绕过（HOTSPOT-005）。
+    trusted_proxies: list[str] = ["127.0.0.1", "::1"]
 
 
 class PathsModel(BaseModel):
@@ -270,6 +276,7 @@ class ServerConfig(BaseSettings):
                 "api_prefix": self.server.api_prefix,
                 "activation_path": self.server.activation_path,
                 "activation_route": self.activation_route(),
+                "trusted_proxies": list(self.server.trusted_proxies),
             },
             "paths": {
                 "database": _p(self.paths.database),

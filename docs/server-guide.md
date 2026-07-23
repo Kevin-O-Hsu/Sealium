@@ -123,10 +123,21 @@ server {
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;   # 限流按此 IP 聚合
+        # 用标准 X-Forwarded-For 链（追加本跳 $remote_addr）。应用层据此做限流
+        # 分桶（HIGH-001）。切勿只设 X-Real-IP——应用层不读取 X-Real-IP。
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
 ```
+
+> **限流与真实客户端 IP（HIGH-001）**：应用层限流**不会**直接用 TCP 对端地址——
+> 那在反代后恒为代理 IP，会让所有限流并入单一全局桶（一个攻击者即可耗尽全局
+> 额度拒绝所有合法激活）。Sealium 经配置项 `[server] trusted_proxies` 受控解析
+> `X-Forwarded-For`：仅当请求的 TCP 对端在 `trusted_proxies` 内时，才采信其写入
+> 的 XFF 链解析真实客户端 IP。默认 `["127.0.0.1", "::1"]` 覆盖同机反代场景。
+> **反向代理跨机/容器时，务必把反代所在 IP 加入 `trusted_proxies`**，否则限流仍
+> 按代理 IP 聚合。不要把 `trusted_proxies` 设为 `"*"` 或全网——那会让任意直连
+> 攻击者伪造 XFF 绕过限流。
 
 服务端默认已绑定回环 `127.0.0.1`（与上面 `proxy_pass http://127.0.0.1:8000` 对齐），同机反代
 无需改。仅当反向代理在另一台机器或容器内时，才设 `[server] host = "0.0.0.0"`（或内网 IP），
