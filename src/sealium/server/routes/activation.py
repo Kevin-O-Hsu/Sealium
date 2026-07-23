@@ -82,8 +82,11 @@ def create_router(activation_path: str = "/activation") -> APIRouter:
         try:
             activation_req = ActivationRequest.from_dict(req_dict)
         except Exception as e:
+            # LOW-008：对外固定通用消息，不回显内部异常细节（字段名 / 类型校验等），
+            # 与服务层对齐；详情写入 DEBUG 服务端日志而非加密响应。
+            logger.debug("请求格式错误: %s", e)
             return _encrypted_response(
-                ActivationResponse.error(f"请求格式错误: {e}", nonce=None), aes_key
+                ActivationResponse.error("请求格式错误", nonce=None), aes_key
             )
 
         # 业务处理：兜底捕获意外异常，避免 500 泄漏堆栈 / 破坏协议（MEDIUM-004）

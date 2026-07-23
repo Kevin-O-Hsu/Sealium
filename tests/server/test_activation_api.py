@@ -108,6 +108,29 @@ class TestActivationRoundtrip:
         resp = client.post("/v1/activation", content=packet)
         data = decrypt(km, resp.content)
         assert data["result"] == "error"
+        # LOW-008：对外固定通用消息，不回显内部异常细节（字段名/类型校验等）
+        assert data["error_msg"] == "请求格式错误"
+        assert "缺少" not in data["error_msg"]
+        assert "KeyError" not in data["error_msg"]
+
+    def test_invalid_field_type_no_internal_leak(
+        self, client, server_public_pem, fixed_timestamp, make_fingerprint
+    ):
+        """LOW-008：类型校验异常的细节（如「timestamp 必须为整数」）不得回显进响应。"""
+        request_dict = {
+            "activation_code": "c",
+            "machine_code": make_fingerprint().to_dict(),
+            "timestamp": "not-an-int",  # 类型非法，from_dict 抛 ValueError
+            "nonce": "n",
+        }
+        packet, km = build_packet(server_public_pem, request_dict)
+        resp = client.post("/v1/activation", content=packet)
+        data = decrypt(km, resp.content)
+        assert data["result"] == "error"
+        assert data["error_msg"] == "请求格式错误"
+        # 内部校验细节不外泄
+        assert "整数" not in data["error_msg"]
+        assert "timestamp" not in data["error_msg"]
 
     def test_response_is_not_plain_json(
         self, client, server_public_pem, unused_code, fixed_timestamp, make_fingerprint
