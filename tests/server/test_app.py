@@ -88,6 +88,38 @@ def test_debug_endpoint_rejects_non_loopback(server_keypair, storage, tmp_path):
         assert resp.status_code == 403
 
 
+class TestTrustedHostMiddleware:
+    """LOW-006：allowed_hosts 配具体域名后启用 Host 头校验。"""
+
+    @staticmethod
+    def _app(server_keypair, storage, tmp_path):
+        cfg = _config(tmp_path, debug=False)
+        cfg.server.allowed_hosts = ["activation.example.com"]
+        return create_app(
+            config=cfg,
+            encryptor=server_keypair,
+            storage=storage,
+            now_provider=lambda: datetime(2026, 1, 1),
+        )
+
+    def test_whitelisted_host_allowed(self, server_keypair, storage, tmp_path):
+        application = self._app(server_keypair, storage, tmp_path)
+        with TestClient(application, base_url="http://activation.example.com") as c:
+            assert c.get("/health").status_code == 200
+
+    def test_unknown_host_rejected(self, server_keypair, storage, tmp_path):
+        application = self._app(server_keypair, storage, tmp_path)
+        # 非白名单 Host → TrustedHostMiddleware 返回 400
+        with TestClient(application, base_url="http://evil.example.com") as c:
+            assert c.get("/health").status_code == 400
+
+    def test_default_wildcard_accepts_any_host(self, make_app, storage):
+        """默认 ["*"] 不校验，任意 Host 放行（零配置开箱不破坏）。"""
+        application = make_app(storage)
+        with TestClient(application, base_url="http://testserver") as c:
+            assert c.get("/health").status_code == 200
+
+
 def test_production_mode_hides_debug_endpoint(make_app, storage):
     application = make_app(storage)  # 默认 debug=False
     with TestClient(application) as test_client:

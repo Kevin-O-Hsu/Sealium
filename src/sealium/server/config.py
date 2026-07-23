@@ -80,6 +80,11 @@ class ServerModel(BaseModel):
     # 推荐部署）；反向代理跨机/容器时须显式加入反代所在 IP，否则限流仍按代理 IP
     # 聚合退化为全局单桶。直接信任未经此列表约束的 XFF 会引入伪造绕过（HOTSPOT-005）。
     trusted_proxies: list[str] = ["127.0.0.1", "::1"]
+    # 受信任的 Host 头白名单（LOW-006）：注册 TrustedHostMiddleware 校验 Host 头，
+    # 防裸暴露下的 Host 投毒 / 路由混淆；反代后通常由反代承担，此处为纵深防御。
+    # 默认 ["*"] 不校验（保持零配置开箱），生产部署建议配具体域名（如
+    # ["activation.example.com"]）。
+    allowed_hosts: list[str] = ["*"]
 
 
 class PathsModel(BaseModel):
@@ -277,6 +282,7 @@ class ServerConfig(BaseSettings):
                 "activation_path": self.server.activation_path,
                 "activation_route": self.activation_route(),
                 "trusted_proxies": list(self.server.trusted_proxies),
+                "allowed_hosts": list(self.server.allowed_hosts),
             },
             "paths": {
                 "database": _p(self.paths.database),

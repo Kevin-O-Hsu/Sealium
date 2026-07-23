@@ -63,6 +63,8 @@ python -m sealium.server.run
 | `debug` | `false` | 调试模式：开启 `/docs`/`/redoc`/`/openapi.json`、`/debug/config`（仅回环）、uvicorn 热重载，并在启动时打印显著警告。**生产必须 `false`** |
 | `api_prefix` | `/v1` | API 前缀 |
 | `activation_path` | `/activation` | 激活路径（完整路由 = `api_prefix` + `activation_path`，默认 `/v1/activation`） |
+| `trusted_proxies` | `["127.0.0.1","::1"]` | 反代部署下受信任的代理 IP（HIGH-001）：仅这些 TCP 对端写入的 `X-Forwarded-For` 才被限流采信解析真实客户端 IP。默认仅回环（同机反代）；跨机/容器反代务必加入反代所在 IP |
+| `allowed_hosts` | `["*"]` | Host 头白名单（LOW-006）：`["*"]` 不校验；配具体域名（如 `["activation.example.com"]`）后启用 TrustedHostMiddleware 防 Host 投毒 / 路由混淆 |
 
 ### `[paths]` 存储与密钥
 

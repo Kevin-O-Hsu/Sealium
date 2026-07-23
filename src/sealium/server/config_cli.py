@@ -69,6 +69,9 @@ activation_path = "/activation"
 # 写入的 X-Forwarded-For 解析真实客户端 IP。默认仅回环（同机反代）；反向代理
 # 跨机/容器时务必加入反代所在 IP，否则限流仍按代理 IP 聚合退化为全局单桶。
 trusted_proxies = ["127.0.0.1", "::1"]
+# Host 头白名单（LOW-006）：默认 ["*"] 不校验 Host；生产建议配具体域名（如
+# ["activation.example.com"]）防裸暴露下 Host 投毒 / 路由混淆。
+allowed_hosts = ["*"]
 
 [paths]
 database = "data/database.db"

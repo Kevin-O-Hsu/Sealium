@@ -19,6 +19,7 @@ from typing import Callable, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from sealium import __version__
 from sealium.common.crypto import RSAEncryptor, hash_activation_code
@@ -156,6 +157,11 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # TrustedHostMiddleware（LOW-006）：校验 Host 头防裸暴露下的 Host 投毒/路由混淆。
+    # 反代后通常由反代承担 Host 过滤，此处为纵深防御。默认 allowed_hosts=["*"] 时
+    # Starlette 直接放行（零配置开箱不破坏）；生产配具体域名即启用校验。注册在 CORS
+    # 之后（栈中外层），使 Host 校验先于 CORS 执行。
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=cfg.server.allowed_hosts)
     app.include_router(create_router(cfg.server.activation_path), prefix=cfg.server.api_prefix)
 
     @app.get("/health", tags=["health"])

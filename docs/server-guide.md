@@ -139,6 +139,10 @@ server {
 > 按代理 IP 聚合。不要把 `trusted_proxies` 设为 `"*"` 或全网——那会让任意直连
 > 攻击者伪造 XFF 绕过限流。
 
+> **Host 头校验（LOW-006，可选）**：把对外域名加入 `[server] allowed_hosts`（如
+> `["activation.example.com"]`）即启用 `TrustedHostMiddleware` 校验 Host 头，防裸暴露下的
+> Host 投毒 / 路由混淆。默认 `["*"]` 不校验；反代后通常由反代承担 Host 过滤，此项为纵深防御。
+
 服务端默认已绑定回环 `127.0.0.1`（与上面 `proxy_pass http://127.0.0.1:8000` 对齐），同机反代
 无需改。仅当反向代理在另一台机器或容器内时，才设 `[server] host = "0.0.0.0"`（或内网 IP），
 并确保该端口只对反代可达。

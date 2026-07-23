@@ -45,6 +45,7 @@
 - [ ] 服务置于反向代理后，启用 TLS + HSTS；`[server] host = "127.0.0.1"`。
 - [ ] `[server] debug = false`。
 - [ ] 限流开启并按实际调参（`[rate_limit]`）。
+- [ ] 反代部署：把反代 IP 加入 `[server] trusted_proxies`（限流才按真实客户端 IP 分桶，HIGH-001），把对外域名加入 `[server] allowed_hosts`（启用 Host 头校验，LOW-006）。
 - [ ] 部署前跑 `python -m sealium.server.config_cli check` 自检。
 - [ ] 定期备份 SQLite（激活码是资产）。
 - [ ] 多 worker 时注入共享防重放/限流后端（Redis）。
