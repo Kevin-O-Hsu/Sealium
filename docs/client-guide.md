@@ -75,7 +75,6 @@ class ActivationResponse:
 | `请求时间戳无效，请同步时间` | 客户端时间与权威 API 偏差超 300 秒 |
 | `请求已被使用，请勿重复发送` | (code, nonce) 重复（防重放） |
 | `激活码无效或已被使用` | 码不存在 / 已过期 / **已被其他设备绑定**（三者对外不可区分） |
-| `激活码已过期` | 码已过截止日期 |
 
 > 出于安全，"码不存在"与"已被他机占用"合并为同一提示，避免攻击者枚举有效激活码。
 
@@ -92,6 +91,21 @@ Activator(
     http_poster=my_poster,                        # 自定义 HTTP（如走代理）
     request_timeout=10,                           # 超时秒数
 )
+```
+
+> **时间源与隐私（重要）**：默认 `timestamp_provider` 指向第三方
+> `https://aisenseapi.com/services/v1/timestamp`——每次 `activate()` 都会向其发请求，泄漏客户端
+> 公网 IP 与「用户正在激活」这一行为，且该 API 不可达时激活会失败（单点）。若不希望依赖该
+> 第三方，**注入你自己的 `timestamp_provider`**（指向你自有、多源冗余的时间服务，或内网时间源），
+> 即可同时消除第三方隐私泄漏与单点依赖，并便于你自行实施证书 pinning。时间戳仅用于 ±300s
+> 防重放窗口，不影响授权截止判定（详见 [安全模型](security.md#已知限制务必了解)）。
+
+```python
+def my_timestamp() -> int:
+    # 你的自有权威时间源（HTTP/HTTPS/NTP），返回 Unix 秒时间戳
+    ...
+
+activator = Activator(..., timestamp_provider=my_timestamp)
 ```
 
 ## 7. 授权持久化（你的应用负责）
