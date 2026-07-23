@@ -27,11 +27,34 @@ from typing import Optional
 # ---------------------------------------------------------------------------
 # pepper：仅客户端生成 value 时用
 # ---------------------------------------------------------------------------
-# 固定 pepper 充当域分隔符，阻挡简单彩虹表。**绝不能用随机盐**——否则同机两次
-# 激活产生不同 value，既破坏幂等又破坏 DB bound 比对（复刻 MEDIUM-003）。
-# 部署后**不可变**：改它 = 全部已绑定记录的 value 失配 → 强制重激活。
-# 仅客户端读它；服务端 import 本模块但不调用 hash_component，pepper 对服务端无意义。
-_PEPPER = os.environ.get("MACHINE_ID_PEPPER", "sealium-v1-hardware-fingerprint-pepper")
+# pepper 充当域分隔盐，阻挡简单彩虹表。**绝不能用随机盐**——否则同机两次激活
+# 产生不同 value，既破坏幂等又破坏 DB bound 比对（复刻 MEDIUM-003）。部署后
+# **不可变**：改它 = 全部已绑定记录的 value 失配 → 强制重激活。
+#
+# 强制运行时配置（LOW-003）：绝不静默回退到源码公开默认值——那会让你的发行与
+# 所有用默认值的发行指纹互通、防护形同虚设。客户端必须在 Python 解释器启动前
+#（import sealium 之前）设置环境变量 MACHINE_ID_PEPPER；未设时生成指纹抛
+# RuntimeError。仅客户端生成指纹时读它；服务端 import 本模块但只比对已哈希分量、
+# 不生成指纹，故服务端无需设置。
+_configured_pepper: Optional[str] = os.environ.get("MACHINE_ID_PEPPER")
+
+
+def _resolve_pepper(explicit: Optional[str]) -> str:
+    """解析实际使用的 pepper，强制运行时配置（LOW-003）。
+
+    :param explicit: 调用方显式注入（测试 / 程序化）；非 ``None`` 时直接采用，
+                     优先级最高。
+    :raises RuntimeError: 既无显式注入、运行时也未设置 ``MACHINE_ID_PEPPER``。
+    """
+    if explicit is not None:
+        return explicit
+    if _configured_pepper:
+        return _configured_pepper
+    raise RuntimeError(
+        "未配置硬件指纹 pepper：请在 Python 解释器启动前（import sealium 之前）"
+        "设置环境变量 MACHINE_ID_PEPPER 为你的私有随机值。使用源码公开默认值会让"
+        "你的发行与所有用默认值的发行指纹互通。详见 docs/client-guide.md §9。"
+    )
 
 # 指纹分量数量上限（MEDIUM-001）：合法指纹分量 < 10（见 DEFAULT_WEIGHTS 的 9 类），
 # 设 64 给足余量，超限拒绝解析以防 components 数组塞海量分量触发内存耗尽。
@@ -44,10 +67,11 @@ def hash_component(category: str, raw: str, *, pepper: Optional[str] = None) -> 
 
     :param category: 硬件类别（入哈希防不同类同值碰撞）。
     :param raw: 已规范化的硬件原始值。
-    :param pepper: 域分隔盐；为 ``None`` 时用模块默认 ``_PEPPER``。测试可注入固定值。
+    :param pepper: 域分隔盐；为 ``None`` 时取运行时配置的 ``MACHINE_ID_PEPPER``
+                   （未配置则抛错，LOW-003）。测试可显式注入固定值。
     :return: 64 位十六进制哈希。绝不存原始串号。
     """
-    p = pepper if pepper is not None else _PEPPER
+    p = _resolve_pepper(pepper)
     material = f"{category}:{p}:{raw}".encode("utf-8")
     return hashlib.sha256(material).hexdigest()
 

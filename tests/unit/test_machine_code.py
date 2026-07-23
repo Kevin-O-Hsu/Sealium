@@ -106,3 +106,29 @@ class TestNonWindowsCollection:
     def test_default_collector_raises(self):
         with pytest.raises(RuntimeError):
             generate_machine_code()
+
+
+class TestPepperEnforcement:
+    """LOW-003：未配置 MACHINE_ID_PEPPER 时生成指纹强制抛错，杜绝用公开默认值。"""
+
+    def test_hash_component_raises_when_unconfigured(self, monkeypatch):
+        from sealium.common import fingerprint
+
+        monkeypatch.setattr(fingerprint, "_configured_pepper", None)
+        with pytest.raises(RuntimeError):
+            hash_component("cpu", "x")
+
+    def test_explicit_pepper_bypasses_enforcement(self, monkeypatch):
+        from sealium.common import fingerprint
+
+        monkeypatch.setattr(fingerprint, "_configured_pepper", None)
+        # 显式注入 pepper 仍可工作（测试 / 程序化路径不受强制影响）
+        h = hash_component("cpu", "x", pepper="explicit-pepper")
+        assert len(h) == 64
+
+    def test_generate_machine_code_raises_when_unconfigured(self, monkeypatch):
+        from sealium.common import fingerprint
+
+        monkeypatch.setattr(fingerprint, "_configured_pepper", None)
+        with pytest.raises(RuntimeError):
+            generate_machine_code(lambda: _surfaces())

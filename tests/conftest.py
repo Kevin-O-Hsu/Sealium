@@ -12,11 +12,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
 from fastapi.testclient import TestClient
+
+# LOW-003：硬件指纹 pepper 现为强制运行时配置（未设 MACHINE_ID_PEPPER 时生成
+# 指纹抛错）。测试套件需固定 pepper，且必须在首次 import sealium 之前设置
+#（import 之后设置无效，见 client-guide §9）。setdefault 不覆盖生产环境已设值。
+os.environ.setdefault("MACHINE_ID_PEPPER", "sealium-test-fingerprint-pepper")
 
 from sealium.client.activator import Activator
 from sealium.common.crypto import RSAEncryptor

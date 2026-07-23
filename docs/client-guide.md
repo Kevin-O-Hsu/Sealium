@@ -147,15 +147,16 @@ activator = Activator(..., machine_code_provider=my_provider)
 ## 9. 配置客户端硬件指纹 pepper（分发前必做）
 
 客户端采集硬件指纹时，每类硬件原始值都按 `sha256(category + pepper + raw)` 逐项哈希
-（原理见 [硬件绑定](hardware-binding.md)）。这个 pepper **默认是源码里的公开常量**
-`"sealium-v1-hardware-fingerprint-pepper"`——任何人都能从 PyPI / 源码看到。**不改它，
-你的发行就和所有用默认值的发行指纹互通，彩虹表 / 跨发行碰撞防护形同虚设。** 每个发行
-**必须**在分发前设自己的私有 pepper。
+（原理见 [硬件绑定](hardware-binding.md)）。**Sealium 不再内置任何公开默认 pepper**——
+未配置时生成指纹会**直接抛 `RuntimeError`**（LOW-003）。这是有意的强制：内置公开默认值会让
+你的发行与所有用默认值的发行指纹互通，彩虹表 / 跨发行碰撞防护形同虚设。每个发行**必须**在
+分发前显式提供自己的私有 pepper（见下方配置方式）。
 
 ### 它是什么、怎么读
 
 - pepper 是**运行时环境变量** `MACHINE_ID_PEPPER`：客户端进程启动时由
-  `os.environ.get("MACHINE_ID_PEPPER", <内置默认>)` 读取**一次**并固化进模块。
+  `os.environ.get("MACHINE_ID_PEPPER")` 读取**一次**并固化进模块；**未设则没有 pepper**，
+  生成指纹时抛 `RuntimeError`。
 - **时机铁律**：必须在 Python 解释器启动、`import sealium` 之前，该变量就已存在于进程
   环境块。**import 之后再设环境变量无效**（模块属性已求值，实测不会更新）。
 - 客户端整条激活链路都读这一个变量（采集层不传显式 pepper，直接走模块默认值）。
@@ -169,15 +170,16 @@ activator = Activator(..., machine_code_provider=my_provider)
 
 ### 配置方式（任选其一，不限定工具）
 
-**方式 A — 改源码默认值（最可靠，与封装工具解耦，推荐）**
+**方式 A — 烧进源码（最可靠，与封装工具解耦，推荐）**
 
-把 `src/sealium/common/fingerprint.py` 里这行的默认字符串改成你的私有值，再打包进 exe：
+把 `src/sealium/common/fingerprint.py` 里的 `_configured_pepper` 直接改成你的私有常量，
+再打包进 exe：
 
 ```python
-# 改前
-_PEPPER = os.environ.get("MACHINE_ID_PEPPER", "sealium-v1-hardware-fingerprint-pepper")
-# 改后（换成你的私有随机串）
-_PEPPER = os.environ.get("MACHINE_ID_PEPPER", "你的私有随机串")
+# 改前（读环境变量，未设则生成指纹抛错）
+_configured_pepper: Optional[str] = os.environ.get("MACHINE_ID_PEPPER")
+# 改后（直接烧死成你的私有随机串，绕过环境变量）
+_configured_pepper: Optional[str] = "你的私有随机串"
 ```
 
 pepper 随二进制分发，**完全不依赖运行时环境变量机制**——Nuitka / Enigma Virtual Box /
@@ -208,18 +210,18 @@ pepper 一旦被任何客户端用来生成过指纹、并被服务端绑定，*
 
 ### 自测：确认 pepper 真的生效
 
-无论用哪种方式，配置 / 打包后务必对比——同一输入、不同 pepper，输出必须不同：
+无论用哪种方式，配置 / 打包后务必自测——未配置时应抛错，配置后应稳定输出：
 
 ```bash
-# 终端1：默认 pepper
-python -c "from sealium.common.fingerprint import hash_component as h; print(h('cpu','TEST123'))"
-# 终端2：你的私有 pepper（新进程，启动前注入）
+# 未配置（干净环境）→ 必须抛 RuntimeError，证明没有静默回退到公开默认值
+env -u MACHINE_ID_PEPPER python -c "from sealium.common.fingerprint import hash_component as h; print(h('cpu','TEST123'))"
+# 配置你的私有 pepper（新进程，启动前注入）→ 正常输出哈希
 MACHINE_ID_PEPPER=你的私有值 python -c "from sealium.common.fingerprint import hash_component as h; print(h('cpu','TEST123'))"
 # Windows cmd 等价： set MACHINE_ID_PEPPER=你的私有值 && python -c "..."
 ```
 
-两次输出**不同** → pepper 生效；**相同** → 仍在用公开默认值，回头检查注入是否在
-`import sealium` 之前完成。
+第一条抛 `RuntimeError` → 强制生效；第二条正常输出 → 配置正确。若两条都正常输出，说明仍在
+用某个内置默认值（不应发生），回头检查注入是否在 `import sealium` 之前完成。
 
 ## 10. 安全建议
 
